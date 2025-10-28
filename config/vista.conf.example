@@ -1,0 +1,27 @@
+# vista wallpaper switcher configuration
+# Copy to ~/.config/vista/config and customize
+
+# Directory containing wallpapers
+wallpaper_dir = ~/Pictures/Wallpapers
+
+# Command to set wallpaper (feh, nitrogen, etc.)
+feh_command = feh --bg-scale
+
+# Script to generate color palette (optional)
+# Leave empty to disable
+palette_script = 
+
+# Thumbnail dimensions (pixels)
+thumbnail_width = 200
+thumbnail_height = 150
+
+# Window dimensions (pixels)
+window_width = 1200
+window_height = 300
+
+# Enable OpenGL shader rendering (true/false)
+# Requires vista to be built with USE_SHADERS=ON
+use_shaders = false
+
+# Number of thumbnails per row
+thumbnails_per_row = 5
