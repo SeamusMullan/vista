@@ -10,6 +10,9 @@ echo "Building vista..."
 echo "  Build type: $BUILD_TYPE"
 echo "  Shaders: $USE_SHADERS"
 
+# remove existing build directory if exists
+rm -rf build
+
 # Create build directory
 mkdir -p build
 cd build
@@ -25,9 +28,6 @@ cmake --build . -j$(nproc)
 
 echo ""
 echo "Build complete! Binary: ./build/vista"
-echo ""
-echo "To install system-wide:"
-echo "  cd build && sudo cmake --install ."
 echo ""
 echo "To run from build directory:"
 echo "  ./build/vista"
