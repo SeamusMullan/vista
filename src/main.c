@@ -68,12 +68,21 @@ int main(int argc, char *argv[]) {
     // Load configuration
     Config config = config_path ? config_parse(config_path) : config_default();
     
-    // Scan wallpapers
+    // Scan wallpapers from all configured directories
     printf("Scanning wallpapers in: %s\n", config.wallpaper_dir);
-    WallpaperList wallpapers = wallpaper_list_scan(config.wallpaper_dir);
+    for (int i = 0; i < config.wallpaper_dirs_count; i++) {
+        printf("  Additional directory: %s\n", config.wallpaper_dirs[i]);
+    }
+    
+    WallpaperList wallpapers;
+    if (config.wallpaper_dirs_count > 0) {
+        wallpapers = wallpaper_list_scan_multiple(&config);
+    } else {
+        wallpapers = wallpaper_list_scan(config.wallpaper_dir);
+    }
     
     if (wallpapers.count == 0) {
-        fprintf(stderr, "No wallpapers found in %s\n", config.wallpaper_dir);
+        fprintf(stderr, "No wallpapers found\n");
         SDL_Quit();
         return 1;
     }
@@ -107,28 +116,108 @@ int main(int argc, char *argv[]) {
                 case SDL_KEYDOWN:
                     switch (event.key.keysym.sym) {
                         case SDLK_ESCAPE:
+                        case SDLK_q:
                             running = false;
                             break;
                             
                         case SDLK_LEFT:
-                            renderer_select_prev(renderer);
+                        case SDLK_h:
+                            renderer_select_prev(renderer, &config);
                             break;
                             
                         case SDLK_RIGHT:
-                            renderer_select_next(renderer, wallpapers.count - 1);
+                        case SDLK_l:
+                            renderer_select_next(renderer, wallpapers.count - 1, &config);
+                            break;
+                            
+                        case SDLK_UP:
+                        case SDLK_k:
+                            renderer_select_up(renderer, &config);
+                            break;
+                            
+                        case SDLK_DOWN:
+                        case SDLK_j:
+                            renderer_select_down(renderer, wallpapers.count - 1, &config);
+                            break;
+                            
+                        case SDLK_g:
+                            renderer_toggle_view_mode(renderer);
+                            break;
+                            
+                        case SDLK_f:
+                            wallpaper_toggle_favorite(&wallpapers, renderer->selected_index);
+                            break;
+                            
+                        case SDLK_F2:
+                            wallpaper_list_toggle_favorites_filter(&wallpapers);
+                            renderer->selected_index = 0;
+                            printf("Favorites filter: %s\n", wallpapers.show_favorites_only ? "ON" : "OFF");
+                            break;
+                            
+                        case SDLK_SLASH:
+                        case SDLK_QUESTION:
+                            renderer->show_help = !renderer->show_help;
                             break;
                             
                         case SDLK_RETURN:
                         case SDLK_KP_ENTER:
-                            if (renderer->selected_index >= 0 && 
-                                renderer->selected_index < wallpapers.count) {
-                                const char *selected = wallpapers.items[renderer->selected_index].path;
-                                printf("Applying wallpaper: %s\n", selected);
-                                wallpaper_apply(selected, &config);
-                                wallpaper_generate_palette(selected, &config);
-                                running = false;
+                            if (renderer->selected_index >= 0) {
+                                Wallpaper *wp = wallpaper_list_get(&wallpapers, renderer->selected_index);
+                                if (wp) {
+                                    printf("Applying wallpaper: %s\n", wp->path);
+                                    wallpaper_apply(wp->path, &config);
+                                    wallpaper_generate_palette(wp->path, &config);
+                                    running = false;
+                                }
                             }
                             break;
+                    }
+                    break;
+                    
+                case SDL_MOUSEBUTTONDOWN:
+                    if (event.button.button == SDL_BUTTON_LEFT) {
+                        // Calculate which thumbnail was clicked
+                        int visible_count = wallpaper_list_visible_count(&wallpapers);
+                        int mouse_x = event.button.x;
+                        int mouse_y = event.button.y;
+                        
+                        if (renderer->view_mode == VIEW_MODE_HORIZONTAL) {
+                            int x_pos = 20 + (int)renderer->current_scroll;
+                            for (int i = 0; i < visible_count; i++) {
+                                if (mouse_x >= x_pos && mouse_x < x_pos + config.thumbnail_width) {
+                                    renderer->selected_index = i;
+                                    
+                                    // Double-click to apply
+                                    Wallpaper *wp = wallpaper_list_get(&wallpapers, i);
+                                    if (wp) {
+                                        printf("Applying wallpaper: %s\n", wp->path);
+                                        wallpaper_apply(wp->path, &config);
+                                        wallpaper_generate_palette(wp->path, &config);
+                                        running = false;
+                                    }
+                                    break;
+                                }
+                                x_pos += config.thumbnail_width + 20;
+                            }
+                        } else {
+                            // Grid mode
+                            int cols = config.thumbnails_per_row;
+                            int start_x = 20;
+                            int start_y = 20 + (int)renderer->current_scroll_y;
+                            
+                            for (int i = 0; i < visible_count; i++) {
+                                int col = i % cols;
+                                int row = i / cols;
+                                int x = start_x + col * (config.thumbnail_width + 20);
+                                int y = start_y + row * (config.thumbnail_height + 20);
+                                
+                                if (mouse_x >= x && mouse_x < x + config.thumbnail_width &&
+                                    mouse_y >= y && mouse_y < y + config.thumbnail_height) {
+                                    renderer->selected_index = i;
+                                    break;
+                                }
+                            }
+                        }
                     }
                     break;
             }

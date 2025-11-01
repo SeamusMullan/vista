@@ -10,19 +10,37 @@
 
 #define MAX_PATH 256
 
+#define MAX_WALLPAPER_DIRS 10
+#define MAX_MONITORS 8
+#define MAX_COMMAND 512
+
 /**
  * @brief Configuration structure
  */
 typedef struct {
-    char wallpaper_dir[MAX_PATH];    /**< Directory containing wallpapers */
-    char feh_command[MAX_PATH];      /**< Command to set wallpaper */
-    char palette_script[MAX_PATH];   /**< Script to generate color palette */
-    int thumbnail_width;              /**< Thumbnail width in pixels */
-    int thumbnail_height;             /**< Thumbnail height in pixels */
-    int window_width;                 /**< Window width */
-    int window_height;                /**< Window height */
-    bool use_shaders;                 /**< Enable shader rendering */
-    int thumbnails_per_row;           /**< Number of thumbnails per row */
+    char wallpaper_dir[MAX_PATH];              /**< Primary directory containing wallpapers */
+    char wallpaper_dirs[MAX_WALLPAPER_DIRS][MAX_PATH]; /**< Multiple wallpaper directories */
+    int wallpaper_dirs_count;                  /**< Number of configured directories */
+    char feh_command[MAX_PATH];                /**< Command to set wallpaper */
+    char palette_script[MAX_PATH];             /**< Script to generate color palette */
+    
+    // Multi-monitor support
+    char monitors[MAX_MONITORS][64];           /**< Monitor output names (e.g., "DP-2", "HDMI-1") */
+    int monitors_count;                        /**< Number of configured monitors */
+    bool use_per_monitor;                      /**< Apply wallpaper per monitor instead of spanning */
+    
+    // Additional commands
+    bool use_wal;                              /**< Generate colors using pywal */
+    char wal_options[256];                     /**< Additional options to pass to wal command */
+    bool reload_i3;                            /**< Reload i3 after wallpaper change */
+    char post_command[MAX_COMMAND];            /**< Additional command to run after wallpaper change */
+    
+    int thumbnail_width;                       /**< Thumbnail width in pixels */
+    int thumbnail_height;                      /**< Thumbnail height in pixels */
+    int window_width;                          /**< Window width */
+    int window_height;                         /**< Window height */
+    bool use_shaders;                          /**< Enable shader rendering */
+    int thumbnails_per_row;                    /**< Number of thumbnails per row */
 } Config;
 
 /**
