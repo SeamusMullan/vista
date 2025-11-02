@@ -31,10 +31,26 @@ static int run_command_async(const char *cmd) {
     pid_t pid = fork();
     
     if (pid == 0) {
-        execlp("sh", "sh", "-c", cmd, NULL);
-        exit(1);
+        // Child process: detach from parent by forking again
+        pid_t pid2 = fork();
+        
+        if (pid2 == 0) {
+            // Grandchild: this will be adopted by init when parent exits
+            // Redirect stdout/stderr to /dev/null to avoid blocking
+            freopen("/dev/null", "w", stdout);
+            freopen("/dev/null", "w", stderr);
+            
+            execlp("sh", "sh", "-c", cmd, NULL);
+            exit(1);
+        }
+        
+        // First child exits immediately, orphaning the grandchild
+        exit(0);
     } else if (pid > 0) {
-        return 0; // Don't wait
+        // Parent: wait for first child to exit (prevents zombies)
+        int status;
+        waitpid(pid, &status, 0);
+        return 0;
     }
     
     return -1;
@@ -68,6 +84,7 @@ int wallpaper_apply(const char *path, const Config *config) {
     char cmd[1024];
     
     // Step 1: Run pywal if enabled (before setting wallpaper)
+    // Run asynchronously to avoid blocking
     if (config->use_wal) {
         printf("Generating color scheme with pywal...\n");
         // Use wal with -n flag to skip setting wallpaper (we'll do it ourselves)
@@ -77,11 +94,7 @@ int wallpaper_apply(const char *path, const Config *config) {
         } else {
             snprintf(cmd, sizeof(cmd), "wal -i \"%s\" -n", path);
         }
-        run_command_sync(cmd);
-        
-        // Give pywal a moment to update terminal colors
-        // This is important for real-time terminal color updates
-        usleep(100000); // 100ms delay
+        run_command_async(cmd);
     }
     
     // Step 2: Set the wallpaper explicitly with our configured method
@@ -102,7 +115,8 @@ int wallpaper_apply(const char *path, const Config *config) {
         snprintf(cmd, sizeof(cmd), "%s \"%s\"", config->feh_command, path);
     }
     
-    int result = run_command_sync(cmd);
+    // Run wallpaper setter asynchronously - no need to wait for completion
+    int result = run_command_async(cmd);
     
     // Step 3: Reload i3 if enabled
     if (config->reload_i3) {
