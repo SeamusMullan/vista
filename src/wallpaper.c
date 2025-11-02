@@ -1,4 +1,5 @@
 #include "wallpaper.h"
+#include "config.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -85,7 +86,8 @@ int wallpaper_apply(const char *path, const Config *config) {
     
     // Step 2: Set the wallpaper explicitly with our configured method
     printf("Setting wallpaper: %s\n", path);
-    
+    config_print(config);
+
     // Support different wallpaper setters
     if (strstr(config->feh_command, "feh") != NULL) {
         build_feh_command(cmd, sizeof(cmd), path, config);

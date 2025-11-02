@@ -41,6 +41,8 @@ typedef struct {
     int window_height;                         /**< Window height */
     bool use_shaders;                          /**< Enable shader rendering */
     int thumbnails_per_row;                    /**< Number of thumbnails per row */
+
+    const char *file_location;                   /**< Location of config file on disk */
 } Config;
 
 /**

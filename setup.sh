@@ -4,7 +4,7 @@
 
 set -e  # Exit on error
 
-echo "🎨 Setting up vista wallpaper switcher project..."
+echo "Setting up vista wallpaper switcher project..."
 
 # Color output
 GREEN='\033[0;32m'

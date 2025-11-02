@@ -234,5 +234,7 @@ int main(int argc, char *argv[]) {
     IMG_Quit();
     SDL_Quit();
     
+    fflush(stdout);
+    printf("\n");
     return 0;
 }

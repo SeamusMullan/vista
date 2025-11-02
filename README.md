@@ -1,21 +1,19 @@
 # vista
 
-A fast, keyboard-driven wallpaper selector for Linux with smooth animations, grid view, favorites, and OpenGL shader support.
+A fast, keyboard-driven wallpaper switcher for Linux with smooth animations, favorites, and OpenGL shader support.
 
 ## Features
 
-✅ **Thumbnail Caching** - MD5-based caching system for fast loading  
-✅ **Smooth Animations** - Fluid scrolling transitions  
-✅ **Grid View Mode** - Toggle between horizontal strip and grid layout  
-✅ **Search & Filter** - Find wallpapers by filename  
-✅ **Favorites System** - Mark and filter your favorite wallpapers  
-✅ **OpenGL Shaders** - Hardware-accelerated rendering with custom effects  
-✅ **Multiple Directories** - Scan wallpapers from multiple locations  
-✅ **XDG Compliance** - Follows XDG base directory specification  
-✅ **Mouse Support** - Click to select wallpapers  
-✅ **Multiple Wallpaper Setters** - Support for feh, nitrogen, xwallpaper, swaybg  
+**Thumbnail Caching** - MD5-based caching system for fast loading  
+**Smooth Animations** - Fluid scrolling transitions  
+**Grid View Mode** - Toggle between horizontal strip and grid layout  
+**Search & Filter** - Find wallpapers by filename  
+**Favorites System** - Mark and filter your favorite wallpapers  
+**OpenGL Shaders** - Hardware-accelerated rendering with custom effects  
+**Multiple Directories** - Scan wallpapers from multiple locations  
+**Multiple Wallpaper Setters** - Support for feh, nitrogen, xwallpaper, swaybg  
 
-## Keyboard Shortcuts
+## Keyboard Controls
 
 | Key | Action |
 |-----|--------|
@@ -34,7 +32,7 @@ A fast, keyboard-driven wallpaper selector for Linux with smooth animations, gri
 
 - SDL2
 - SDL2_image
-- OpenSSL
+- OpenSSL / MD5
 - OpenGL and GLEW (optional, for shader support)
 
 ### Build
@@ -50,7 +48,6 @@ mkdir -p build
 cd build
 cmake ..
 make
-sudo make install
 ```
 
 ### Build with OpenGL Shaders
@@ -65,7 +62,7 @@ sudo make install
 
 ## Configuration
 
-Vista follows XDG base directory specification. Configuration file location:
+Configuration file location:
 - `$XDG_CONFIG_HOME/vista/vista.conf`
 - or `~/.config/vista/vista.conf`
 
