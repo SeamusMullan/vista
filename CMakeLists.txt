@@ -10,11 +10,29 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Wpedantic")
 set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -g -O0 -DDEBUG")
 set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -O3 -march=native")
 
+# Platform-specific library search paths and linker flags
+if(APPLE)
+    # macOS: Homebrew installs here
+    link_directories(/opt/homebrew/lib)
+    set(CMAKE_MACOSX_RPATH TRUE)
+elseif(UNIX)
+    # Linux: typical 64-bit lib dir
+    link_directories(/usr/lib64)
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-rpath-link,/usr/lib64")
+elseif(WIN32)
+    # Windows: pkg-config or find_package handles this
+endif()
+
+# RPATH handling (portable)
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+set(CMAKE_SKIP_BUILD_RPATH FALSE)
+set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
+
 # Options
 option(USE_SHADERS "Enable OpenGL shader support" OFF)
 option(BUILD_DOCS "Build documentation with Doxygen" ON)
 
-# Find packages using pkg-config
+# Dependencies
 find_package(PkgConfig REQUIRED)
 find_package(OpenSSL REQUIRED)
 pkg_check_modules(SDL2 REQUIRED sdl2)
@@ -27,7 +45,7 @@ include_directories(
     ${SDL2_IMAGE_INCLUDE_DIRS}
 )
 
-# Source files
+# Sources
 set(SOURCES
     src/main.c
     src/config.c
@@ -36,7 +54,7 @@ set(SOURCES
     src/wallpaper.c
 )
 
-# Add shader support if enabled
+# Optional shader support
 if(USE_SHADERS)
     find_package(OpenGL REQUIRED)
     find_package(GLEW REQUIRED)
@@ -44,32 +62,25 @@ if(USE_SHADERS)
     add_definitions(-DUSE_SHADERS)
 endif()
 
-# Add library search paths before creating executable
-link_directories(/usr/lib64)
-
-# Create executable
+# Executable
 add_executable(vista ${SOURCES})
 
-# Link libraries  
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-rpath-link,/usr/lib64")
+# Link libraries (portable)
 target_link_libraries(vista
-    ${SDL2_LDFLAGS}
-    ${SDL2_IMAGE_LDFLAGS}
+    ${SDL2_LIBRARIES}
+    ${SDL2_IMAGE_LIBRARIES}
     OpenSSL::Crypto
     m
-    stdc++
 )
 
 if(USE_SHADERS)
-    find_package(OpenGL REQUIRED)
-    pkg_check_modules(GLEW REQUIRED glew)
     target_link_libraries(vista
         ${OPENGL_LIBRARIES}
         ${GLEW_LIBRARIES}
     )
 endif()
 
-# Install targets
+# Install rules
 install(TARGETS vista DESTINATION bin)
 install(FILES config/vista.conf.example DESTINATION share/vista)
 install(DIRECTORY shaders DESTINATION share/vista)
@@ -91,3 +102,4 @@ add_custom_target(uninstall
     COMMAND xargs rm -f < install_manifest.txt
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
+
