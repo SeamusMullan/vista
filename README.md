@@ -30,10 +30,15 @@ A fast, keyboard-driven wallpaper switcher for Linux with smooth animations, fav
 
 ### Dependencies
 
+= pkgconf (aka pkg-config) for CMake dependencies
 - SDL2
 - SDL2_image
 - OpenSSL / MD5
 - OpenGL and GLEW (optional, for shader support)
+
+On MacOS
+
+`brew install pkgconf SDL2 SDL2_image SDL2_ttf`
 
 ### Build
 
@@ -131,6 +136,3 @@ vista --help
 vista --version
 ```
 
-## License
-
-See LICENSE file for details.
