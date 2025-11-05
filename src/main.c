@@ -149,8 +149,27 @@ int main(int argc, char *argv[]) {
     }
 
     // Initialize renderer
+#ifdef USE_SHADERS
+    // Use OpenGL renderer if shaders are compiled in AND enabled in config
+    Renderer *renderer = NULL;
+    GLRenderer *gl_renderer = NULL;
+    
+    if (config.use_shaders) {
+        gl_renderer = gl_renderer_init(&config);
+        if (!gl_renderer) {
+            fprintf(stderr, "Failed to initialize OpenGL renderer, falling back to SDL\n");
+            renderer = renderer_init(&config);
+        } else {
+            printf("Using OpenGL shader renderer\n");
+        }
+    } else {
+        renderer = renderer_init(&config);
+    }
+#else
     Renderer *renderer = renderer_init(&config);
-    if (!renderer) {
+#endif
+    
+    if (!renderer && !gl_renderer) {
         fprintf(stderr, "Failed to initialize renderer\n");
         wallpaper_list_free(&wallpapers);
         SDL_Quit();
@@ -177,11 +196,27 @@ int main(int argc, char *argv[]) {
                             
                         case SDLK_LEFT:
                         case SDLK_h:
+#ifdef USE_SHADERS
+                            if (gl_renderer) {
+                                if (gl_renderer->selected_index > 0) {
+                                    gl_renderer->selected_index--;
+                                    gl_renderer->target_scroll += 220;
+                                }
+                            } else
+#endif
                             renderer_select_prev(renderer, &config);
                             break;
                             
                         case SDLK_RIGHT:
                         case SDLK_l:
+#ifdef USE_SHADERS
+                            if (gl_renderer) {
+                                if (gl_renderer->selected_index < wallpapers.count - 1) {
+                                    gl_renderer->selected_index++;
+                                    gl_renderer->target_scroll -= 220;
+                                }
+                            } else
+#endif
                             renderer_select_next(renderer, wallpapers.count - 1, &config);
                             break;
                             
@@ -200,11 +235,21 @@ int main(int argc, char *argv[]) {
                             break;
                             
                         case SDLK_f:
+#ifdef USE_SHADERS
+                            if (gl_renderer) {
+                                wallpaper_toggle_favorite(&wallpapers, gl_renderer->selected_index);
+                            } else
+#endif
                             wallpaper_toggle_favorite(&wallpapers, renderer->selected_index);
                             break;
                             
                         case SDLK_F2:
                             wallpaper_list_toggle_favorites_filter(&wallpapers);
+#ifdef USE_SHADERS
+                            if (gl_renderer) {
+                                gl_renderer->selected_index = 0;
+                            } else
+#endif
                             renderer->selected_index = 0;
                             printf("Favorites filter: %s\n", wallpapers.show_favorites_only ? "ON" : "OFF");
                             break;
@@ -215,9 +260,15 @@ int main(int argc, char *argv[]) {
                             break;
                             
                         case SDLK_RETURN:
-                        case SDLK_KP_ENTER:
-                            if (renderer->selected_index >= 0) {
-                                Wallpaper *wp = wallpaper_list_get(&wallpapers, renderer->selected_index);
+                        case SDLK_KP_ENTER: {
+                            int sel_idx = 0;
+#ifdef USE_SHADERS
+                            sel_idx = gl_renderer ? gl_renderer->selected_index : renderer->selected_index;
+#else
+                            sel_idx = renderer->selected_index;
+#endif
+                            if (sel_idx >= 0) {
+                                Wallpaper *wp = wallpaper_list_get(&wallpapers, sel_idx);
                                 if (wp) {
                                     printf("Applying wallpaper: %s\n", wp->path);
                                     wallpaper_apply(wp->path, &config);
@@ -226,6 +277,7 @@ int main(int argc, char *argv[]) {
                                 }
                             }
                             break;
+                        }
                     }
                     break;
                     
@@ -279,11 +331,21 @@ int main(int argc, char *argv[]) {
         }
         
         // Render
+#ifdef USE_SHADERS
+        if (gl_renderer) {
+            gl_renderer_draw_frame(gl_renderer, &wallpapers, &config);
+        } else
+#endif
         renderer_draw_frame(renderer, &wallpapers, &config);
         SDL_Delay(16); // ~60 FPS
     }
 
     // Cleanup
+#ifdef USE_SHADERS
+    if (gl_renderer) {
+        gl_renderer_cleanup(gl_renderer);
+    } else
+#endif
     renderer_cleanup(renderer);
     wallpaper_list_free(&wallpapers);
     IMG_Quit();
