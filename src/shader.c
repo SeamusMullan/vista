@@ -271,11 +271,30 @@ void gl_renderer_draw_frame(GLRenderer *r, const WallpaperList *list, const Conf
         projection[8] = 0; projection[9] = 0; projection[10] = -1; projection[11] = 0;
         projection[12] = -(right + left) / (right - left); projection[13] = -(top + bottom) / (top - bottom); projection[14] = 0; projection[15] = 1;
         
-        // Model matrix for fullscreen
-        model[0] = config->window_width; model[1] = 0; model[2] = 0; model[3] = 0;
-        model[4] = 0; model[5] = config->window_height; model[6] = 0; model[7] = 0;
+        // Calculate aspect ratios for proper "cover" scaling (no stretching)
+        float window_aspect = (float)config->window_width / (float)config->window_height;
+        float texture_aspect = (float)surf->w / (float)surf->h;
+        
+        float scale_w, scale_h;
+        if (window_aspect > texture_aspect) {
+            // Window is wider than texture - scale to window width
+            scale_w = config->window_width;
+            scale_h = config->window_width / texture_aspect;
+        } else {
+            // Window is taller than texture - scale to window height
+            scale_h = config->window_height;
+            scale_w = config->window_height * texture_aspect;
+        }
+        
+        // Center the background
+        float offset_x = (config->window_width - scale_w) / 2.0f;
+        float offset_y = (config->window_height - scale_h) / 2.0f;
+        
+        // Model matrix for fullscreen with aspect ratio correction
+        model[0] = scale_w; model[1] = 0; model[2] = 0; model[3] = 0;
+        model[4] = 0; model[5] = scale_h; model[6] = 0; model[7] = 0;
         model[8] = 0; model[9] = 0; model[10] = 1; model[11] = 0;
-        model[12] = 0; model[13] = 0; model[14] = 0; model[15] = 1;
+        model[12] = offset_x; model[13] = offset_y; model[14] = 0; model[15] = 1;
         
         glUniformMatrix4fv(glGetUniformLocation(r->shader_program, "projection"), 1, GL_FALSE, projection);
         glUniformMatrix4fv(glGetUniformLocation(r->shader_program, "model"), 1, GL_FALSE, model);
