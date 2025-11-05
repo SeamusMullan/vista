@@ -214,8 +214,8 @@ void roulette_update(RouletteContext *ctx, WallpaperList *wallpapers, float delt
             float state_progress = fminf(state_elapsed / ctx->slow_duration, 1.0f);
             
             if (state_progress >= 1.0f) {
-                // Ensure we end exactly at target
-                ctx->scroll_position = ctx->target_position;
+                // Don't snap - let it smoothly continue into SHOWING state
+                // The lerp in SHOWING will handle final alignment
                 ctx->scroll_velocity = 0.0f;
                 ctx->state = ROULETTE_STATE_SHOWING;
                 ctx->state_start_time = current_time;
@@ -228,8 +228,8 @@ void roulette_update(RouletteContext *ctx, WallpaperList *wallpapers, float delt
                 }
 #endif
                 
-                printf("Roulette: Entering SHOWING state - Selected wallpaper %d at position %.2f\n", 
-                       ctx->selected_index, ctx->scroll_position);
+                printf("Roulette: Entering SHOWING state - Selected wallpaper %d at position %.6f (target: %.6f)\n", 
+                       ctx->selected_index, ctx->scroll_position, ctx->target_position);
             } else {
                 // Use exponential ease-out for very smooth, natural deceleration
                 // This feels most like a real physical object coming to rest
@@ -238,7 +238,7 @@ void roulette_update(RouletteContext *ctx, WallpaperList *wallpapers, float delt
                 // Store previous position to calculate velocity
                 float prev_position = ctx->scroll_position;
                 
-                // Interpolate from start position to target position
+                // Interpolate from start position to target position using high precision
                 ctx->scroll_position = ctx->selecting_start_pos + 
                     (ctx->target_position - ctx->selecting_start_pos) * ease_progress;
                 
@@ -257,11 +257,26 @@ void roulette_update(RouletteContext *ctx, WallpaperList *wallpapers, float delt
             break;
             
         case ROULETTE_STATE_SHOWING: {
-            // Display final selection
+            // Display final selection with smooth lerp to perfect alignment
+            // Apply a gentle lerp to ensure perfect centering
+            float lerp_speed = 10.0f; // Higher = faster convergence
+            float distance_to_target = ctx->target_position - ctx->scroll_position;
+            
+            // Only lerp if we're not already exactly at target
+            if (fabsf(distance_to_target) > 0.0001f) {
+                float lerp_factor = 1.0f - expf(-lerp_speed * (delta_time / 1000.0f));
+                ctx->scroll_position += distance_to_target * lerp_factor;
+            } else {
+                // Snap to exact target once we're close enough
+                ctx->scroll_position = ctx->target_position;
+            }
+            
             Uint32 state_elapsed = current_time - ctx->state_start_time;
             if (state_elapsed >= (Uint32)ctx->show_duration) {
+                // Final snap to exact position
+                ctx->scroll_position = ctx->target_position;
                 ctx->state = ROULETTE_STATE_FINISHED;
-                printf("Roulette: Animation complete\n");
+                printf("Roulette: Animation complete at exact position %.6f\n", ctx->scroll_position);
             }
             break;
         }
@@ -355,35 +370,43 @@ void roulette_render(RouletteContext *ctx, WallpaperList *wallpapers) {
     int screen_width = ctx->center_x * 2;
     int items_per_side = (screen_width / total_item_width) / 2 + 3; // Items on each side plus extra
     
+    // Use the actual scroll position for perfect alignment
+    // wrapped_scroll gives us which item + fractional offset
+    float fractional_offset = wrapped_scroll - floorf(wrapped_scroll);
+    int base_index = (int)floorf(wrapped_scroll);
+    
     for (int i = -items_per_side; i <= items_per_side; i++) {
-        int item_index = ((int)wrapped_scroll + i) % visible_count;
+        int item_index = (base_index + i) % visible_count;
         if (item_index < 0) item_index += visible_count;
         
         Wallpaper *wp = wallpaper_list_get(wallpapers, item_index);
         if (!wp || !wp->thumb) continue;
         
-        // Calculate position - ensure perfect centering
-        float fractional_offset = wrapped_scroll - floorf(wrapped_scroll);
-        // Position items so the current scroll position item is centered
-        int x = ctx->center_x + (int)((i - fractional_offset) * total_item_width) - ctx->item_width / 2;
-        int y = ctx->center_y - ctx->item_height / 2;
+        // Calculate position - use floating point for perfect alignment
+        // The center should show the item at scroll_position
+        // Items are offset by (i - fractional_offset) from center
+        float x_offset = (i - fractional_offset) * total_item_width;
+        float x_float = ctx->center_x + x_offset - ctx->item_width / 2.0f;
+        float y_float = ctx->center_y - ctx->item_height / 2.0f;
         
-        // Calculate distance from center for scaling/fading
-        float dist_from_center = fabsf((float)(x + ctx->item_width / 2 - ctx->center_x));
+        // Calculate distance from center for scaling/fading (use float position)
+        float item_center_x = x_float + ctx->item_width / 2.0f;
+        float dist_from_center = fabsf(item_center_x - ctx->center_x);
         float max_dist = (float)(screen_width / 2);
         float dist_factor = 1.0f - (dist_from_center / max_dist);
         if (dist_factor < 0.0f) dist_factor = 0.0f;
         
         // Scale based on distance from center
         float scale = 0.6f + 0.4f * dist_factor;
-        int scaled_width = (int)(ctx->item_width * scale);
-        int scaled_height = (int)(ctx->item_height * scale);
+        float scaled_width = ctx->item_width * scale;
+        float scaled_height = ctx->item_height * scale;
         
+        // Round to integers only at the final step for SDL_Rect
         SDL_Rect dest = {
-            x + (ctx->item_width - scaled_width) / 2,
-            y + (ctx->item_height - scaled_height) / 2,
-            scaled_width,
-            scaled_height
+            (int)(x_float + (ctx->item_width - scaled_width) / 2.0f),
+            (int)(y_float + (ctx->item_height - scaled_height) / 2.0f),
+            (int)scaled_width,
+            (int)scaled_height
         };
         
         // Create texture from surface if needed
