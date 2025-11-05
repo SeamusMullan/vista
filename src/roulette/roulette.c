@@ -4,6 +4,9 @@
  */
 
 #include "roulette/roulette.h"
+#ifdef HAVE_SDL_MIXER
+#include "roulette/sound.h"
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -28,6 +31,28 @@ RouletteContext* roulette_init(const Config *config, WallpaperList *wallpapers) 
     if (!ctx) {
         return NULL;
     }
+    
+#ifdef HAVE_SDL_MIXER
+    // Initialize SDL_mixer
+    if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048) < 0) {
+        fprintf(stderr, "SDL_mixer could not initialize: %s\n", Mix_GetError());
+        // Continue anyway - audio is optional
+    } else {
+        // Generate sound effects
+        ctx->tick_sound = roulette_sound_generate_tick();
+        ctx->select_sound = roulette_sound_generate_select();
+        
+        if (!ctx->tick_sound || !ctx->select_sound) {
+            fprintf(stderr, "Warning: Could not generate sound effects\n");
+        } else {
+            printf("Audio enabled: Sound effects generated\n");
+        }
+    }
+#else
+    printf("Built without SDL_mixer - no audio\n");
+#endif
+    
+    ctx->last_item_index = -1;
     
     // Create fullscreen window
     SDL_DisplayMode display_mode;
@@ -155,6 +180,14 @@ void roulette_update(RouletteContext *ctx, WallpaperList *wallpapers, float delt
                 ctx->scroll_velocity = 0.0f;
                 ctx->state = ROULETTE_STATE_SHOWING;
                 ctx->state_start_time = current_time;
+                
+#ifdef HAVE_SDL_MIXER
+                // Play selection sound
+                if (ctx->select_sound) {
+                    Mix_PlayChannel(-1, ctx->select_sound, 0);
+                }
+#endif
+                
                 printf("Roulette: Entering SHOWING state - Selected wallpaper %d at position %.2f\n", 
                        ctx->selected_index, ctx->scroll_position);
             } else {
@@ -208,6 +241,23 @@ void roulette_render(RouletteContext *ctx, WallpaperList *wallpapers) {
     if (visible_count == 0) {
         SDL_RenderPresent(ctx->renderer);
         return;
+    }
+    
+    // Check if we've moved to a new item (for tick sound)
+    int current_item = (int)floorf(ctx->scroll_position) % visible_count;
+    if (current_item < 0) current_item += visible_count;
+    
+    if (current_item != ctx->last_item_index) {
+#ifdef HAVE_SDL_MIXER
+        if (ctx->tick_sound) {
+            // Only play tick during scrolling/slowing, not during showing
+            if (ctx->state == ROULETTE_STATE_SCROLLING || 
+                (ctx->state == ROULETTE_STATE_SLOWING && ctx->scroll_velocity > 5.0f)) {
+                Mix_PlayChannel(-1, ctx->tick_sound, 0);
+            }
+        }
+#endif
+        ctx->last_item_index = current_item;
     }
     
     // Create tiled list that repeats
@@ -343,6 +393,17 @@ int roulette_run(RouletteContext *ctx, WallpaperList *wallpapers) {
 
 void roulette_cleanup(RouletteContext *ctx) {
     if (!ctx) return;
+    
+#ifdef HAVE_SDL_MIXER
+    if (ctx->tick_sound) {
+        roulette_sound_free(ctx->tick_sound);
+    }
+    if (ctx->select_sound) {
+        roulette_sound_free(ctx->select_sound);
+    }
+    
+    Mix_CloseAudio();
+#endif
     
     if (ctx->renderer) {
         SDL_DestroyRenderer(ctx->renderer);
