@@ -316,7 +316,7 @@ void roulette_render(RouletteContext *ctx, WallpaperList *wallpapers) {
     
     int base_offset = (int)(wrapped_scroll * total_item_width);
     
-    // Draw center indicator (the "selector")
+    // Draw center indicator (the "selector") - perfectly centered
     int indicator_width = ctx->item_width + 20;
     int indicator_height = ctx->item_height + 20;
     SDL_Rect indicator = {
@@ -341,6 +341,7 @@ void roulette_render(RouletteContext *ctx, WallpaperList *wallpapers) {
         SDL_SetRenderDrawColor(ctx->renderer, 255, 255, 255, 180);
     }
     
+    // Draw multiple glow layers for depth
     for (int i = 0; i < 3; i++) {
         SDL_Rect glow = indicator;
         glow.x -= (i + 1) * 3;
@@ -352,18 +353,19 @@ void roulette_render(RouletteContext *ctx, WallpaperList *wallpapers) {
     
     // Draw wallpaper thumbnails in a horizontal scrolling strip
     int screen_width = ctx->center_x * 2;
-    int items_to_draw = (screen_width / total_item_width) + 4; // Extra for wrapping
+    int items_per_side = (screen_width / total_item_width) / 2 + 3; // Items on each side plus extra
     
-    for (int i = -2; i < items_to_draw; i++) {
+    for (int i = -items_per_side; i <= items_per_side; i++) {
         int item_index = ((int)wrapped_scroll + i) % visible_count;
         if (item_index < 0) item_index += visible_count;
         
         Wallpaper *wp = wallpaper_list_get(wallpapers, item_index);
         if (!wp || !wp->thumb) continue;
         
-        // Calculate position
+        // Calculate position - ensure perfect centering
         float fractional_offset = wrapped_scroll - floorf(wrapped_scroll);
-        int x = ctx->center_x - (int)(fractional_offset * total_item_width) + (i * total_item_width) - ctx->item_width / 2;
+        // Position items so the current scroll position item is centered
+        int x = ctx->center_x + (int)((i - fractional_offset) * total_item_width) - ctx->item_width / 2;
         int y = ctx->center_y - ctx->item_height / 2;
         
         // Calculate distance from center for scaling/fading
