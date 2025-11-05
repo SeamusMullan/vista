@@ -52,6 +52,7 @@ set(SOURCES
     src/thumbnails.c
     src/renderer.c
     src/wallpaper.c
+    src/roulette/roulette.c
 )
 
 # Optional shader support

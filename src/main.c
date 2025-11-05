@@ -13,6 +13,7 @@
 #include "../include/thumbnails.h"
 #include "../include/renderer.h"
 #include "../include/wallpaper.h"
+#include "../include/roulette/roulette.h"
 
 #ifdef USE_SHADERS
 #include "shader.h"
@@ -25,6 +26,7 @@ static void print_usage(const char *prog_name) {
     printf("Usage: %s [options]\n", prog_name);
     printf("Options:\n");
     printf("  -c, --config PATH   Use alternative config file\n");
+    printf("  -r, --random        Random wallpaper with roulette animation\n");
     printf("  -h, --help          Show this help message\n");
     printf("  -v, --version       Show version information\n");
 }
@@ -34,6 +36,7 @@ static void print_usage(const char *prog_name) {
  */
 int main(int argc, char *argv[]) {
     const char *config_path = NULL;
+    bool random_mode = false;
     
     // Parse command line arguments
     for (int i = 1; i < argc; i++) {
@@ -43,6 +46,8 @@ int main(int argc, char *argv[]) {
         } else if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--version") == 0) {
             printf("vista 1.0.0\n");
             return 0;
+        } else if (strcmp(argv[i], "-r") == 0 || strcmp(argv[i], "--random") == 0) {
+            random_mode = true;
         } else if (strcmp(argv[i], "-c") == 0 || strcmp(argv[i], "--config") == 0) {
             if (i + 1 < argc) {
                 config_path = argv[++i];
@@ -112,6 +117,36 @@ int main(int argc, char *argv[]) {
     // Generate thumbnails
     printf("Generating thumbnails...\n");
     wallpaper_list_generate_thumbnails(&wallpapers, &config);
+
+    // Random mode with roulette animation
+    if (random_mode) {
+        printf("Starting roulette animation...\n");
+        RouletteContext *roulette = roulette_init(&config, &wallpapers);
+        if (!roulette) {
+            fprintf(stderr, "Failed to initialize roulette\n");
+            wallpaper_list_free(&wallpapers);
+            IMG_Quit();
+            SDL_Quit();
+            return 1;
+        }
+        
+        int selected_index = roulette_run(roulette, &wallpapers);
+        roulette_cleanup(roulette);
+        
+        // Apply the selected wallpaper
+        Wallpaper *selected = wallpaper_list_get(&wallpapers, selected_index);
+        if (selected) {
+            printf("Applying selected wallpaper: %s\n", selected->path);
+            wallpaper_apply(selected->path, &config);
+            wallpaper_generate_palette(selected->path, &config);
+        }
+        
+        // Cleanup and exit
+        wallpaper_list_free(&wallpapers);
+        IMG_Quit();
+        SDL_Quit();
+        return 0;
+    }
 
     // Initialize renderer
     Renderer *renderer = renderer_init(&config);
