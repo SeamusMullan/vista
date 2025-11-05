@@ -83,7 +83,17 @@ thumbnail_height = 150
 window_width = 1200
 window_height = 300
 
+# ============================================================================
+# OpenGL Shader Rendering
+# ============================================================================
 # Enable OpenGL shader rendering (requires building with -DUSE_SHADERS=ON)
+# When enabled, vista uses hardware-accelerated rendering with advanced effects:
+#   - Transparent window with rounded corners (95% opacity)
+#   - Background blur effect for depth
+#   - Color-adaptive glow on selected thumbnails (extracted from image colors)
+#   - Smooth animations powered by GPU
+# Note: Requires a compositor for transparency (e.g., Picom, KWin, GNOME Shell)
+# See docs/COMPOSITOR_SETUP.md for configuration details
 use_shaders = false
 
 # Number of thumbnails per row (grid mode)

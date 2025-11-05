@@ -70,7 +70,11 @@ GLRenderer* gl_renderer_init(const Config *config) {
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     
-    // Create window
+    // Enable transparency
+    SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8);
+    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+    
+    // Create window with transparency support
     r->window = SDL_CreateWindow(
         "vista - wallpaper switcher (OpenGL)",
         SDL_WINDOWPOS_CENTERED,
@@ -79,6 +83,9 @@ GLRenderer* gl_renderer_init(const Config *config) {
         config->window_height,
         SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_BORDERLESS
     );
+    
+    // Set window opacity (this may need compositor support on Linux)
+    SDL_SetWindowOpacity(r->window, 0.95f);
     
     if (!r->window) {
         fprintf(stderr, "Failed to create window: %s\n", SDL_GetError());
@@ -168,13 +175,51 @@ GLRenderer* gl_renderer_init(const Config *config) {
     return r;
 }
 
+// Helper function to calculate average color from thumbnail
+static void calculate_avg_color(SDL_Surface *surf, float *r, float *g, float *b) {
+    if (!surf || !surf->pixels) {
+        *r = *g = *b = 0.5f;
+        return;
+    }
+    
+    unsigned long long sum_r = 0, sum_g = 0, sum_b = 0;
+    int sample_count = 0;
+    int step = 4; // Sample every 4th pixel for performance
+    
+    SDL_LockSurface(surf);
+    
+    for (int y = 0; y < surf->h; y += step) {
+        for (int x = 0; x < surf->w; x += step) {
+            Uint32 pixel = ((Uint32*)surf->pixels)[y * (surf->pitch / 4) + x];
+            Uint8 pr, pg, pb;
+            SDL_GetRGB(pixel, surf->format, &pr, &pg, &pb);
+            
+            sum_r += pr;
+            sum_g += pg;
+            sum_b += pb;
+            sample_count++;
+        }
+    }
+    
+    SDL_UnlockSurface(surf);
+    
+    if (sample_count > 0) {
+        *r = (sum_r / (float)sample_count) / 255.0f;
+        *g = (sum_g / (float)sample_count) / 255.0f;
+        *b = (sum_b / (float)sample_count) / 255.0f;
+    } else {
+        *r = *g = *b = 0.5f;
+    }
+}
+
 void gl_renderer_draw_frame(GLRenderer *r, const WallpaperList *list, const Config *config) {
     // Smooth scroll animation
     const float smoothness = 0.15f;
     r->current_scroll += (r->target_scroll - r->current_scroll) * smoothness;
     r->current_scroll_y += (r->target_scroll_y - r->current_scroll_y) * smoothness;
     
-    glClearColor(0.08f, 0.08f, 0.08f, 1.0f);
+    // Clear with transparency
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     
     glUseProgram(r->shader_program);
@@ -183,6 +228,14 @@ void gl_renderer_draw_frame(GLRenderer *r, const WallpaperList *list, const Conf
     // Set time uniform for animation
     float time = SDL_GetTicks() / 1000.0f;
     glUniform1f(glGetUniformLocation(r->shader_program, "time"), time);
+    
+    // Set window size uniform
+    float windowSize[2] = {(float)config->window_width, (float)config->window_height};
+    glUniform2fv(glGetUniformLocation(r->shader_program, "windowSize"), 1, windowSize);
+    
+    // Set corner radius and blur strength
+    glUniform1f(glGetUniformLocation(r->shader_program, "cornerRadius"), 15.0f);
+    glUniform1f(glGetUniformLocation(r->shader_program, "blurStrength"), 8.0f);
     
     int visible_count = wallpaper_list_visible_count(list);
     
@@ -211,6 +264,20 @@ void gl_renderer_draw_frame(GLRenderer *r, const WallpaperList *list, const Conf
                 // Set selected uniform (this enables the shader glow effect!)
                 float selected = (i == r->selected_index) ? 1.0f : 0.0f;
                 glUniform1f(glGetUniformLocation(r->shader_program, "selected"), selected);
+                
+                // Set thumbnail-specific uniforms
+                glUniform1f(glGetUniformLocation(r->shader_program, "isBackground"), 0.0f);
+                
+                float thumbnailPos[2] = {(float)x, (float)y};
+                float thumbnailSize[2] = {(float)config->thumbnail_width, (float)config->thumbnail_height};
+                glUniform2fv(glGetUniformLocation(r->shader_program, "thumbnailPos"), 1, thumbnailPos);
+                glUniform2fv(glGetUniformLocation(r->shader_program, "thumbnailSize"), 1, thumbnailSize);
+                
+                // Calculate and set average color for glow effect
+                float avg_r, avg_g, avg_b;
+                calculate_avg_color(surf, &avg_r, &avg_g, &avg_b);
+                float avgColor[3] = {avg_r, avg_g, avg_b};
+                glUniform3fv(glGetUniformLocation(r->shader_program, "avgColor"), 1, avgColor);
                 
                 // Setup transformation matrices
                 float model[16], projection[16];
