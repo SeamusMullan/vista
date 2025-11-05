@@ -18,6 +18,17 @@ static float ease_out_cubic(float t) {
     return f * f * f + 1.0f;
 }
 
+// Gentler ease-out for smoother deceleration
+static float ease_out_quad(float t) {
+    return t * (2.0f - t);
+}
+
+// Very smooth exponential ease-out - feels most natural
+static float ease_out_expo(float t) {
+    if (t >= 1.0f) return 1.0f;
+    return 1.0f - powf(2.0f, -10.0f * t);
+}
+
 static float ease_in_cubic(float t) {
     return t * t * t;
 }
@@ -38,15 +49,28 @@ RouletteContext* roulette_init(const Config *config, WallpaperList *wallpapers) 
         fprintf(stderr, "SDL_mixer could not initialize: %s\n", Mix_GetError());
         // Continue anyway - audio is optional
     } else {
-        // Generate sound effects
-        ctx->tick_sound = roulette_sound_generate_tick();
-        ctx->select_sound = roulette_sound_generate_select();
+        // Allocate more mixing channels to prevent overlap
+        Mix_AllocateChannels(8);
+        
+        // Load or generate sound effects
+        const char *audio_dir = (config->audio_dir[0] != '\0') ? config->audio_dir : NULL;
+        
+        if (audio_dir) {
+            printf("Looking for audio files in: %s\n", audio_dir);
+        }
+        
+        ctx->tick_sound = roulette_sound_load_tick(audio_dir);
+        ctx->select_sound = roulette_sound_load_select(audio_dir);
         
         if (!ctx->tick_sound || !ctx->select_sound) {
-            fprintf(stderr, "Warning: Could not generate sound effects\n");
+            fprintf(stderr, "Warning: Could not load/generate sound effects\n");
         } else {
-            printf("Audio enabled: Sound effects generated\n");
+            printf("Audio enabled: Sound effects ready\n");
         }
+        
+        // Reserve dedicated channels for different sounds
+        ctx->tick_channel = 0;    // Channel 0 for tick sounds
+        ctx->select_channel = 1;  // Channel 1 for selection sound
     }
 #else
     printf("Built without SDL_mixer - no audio\n");
@@ -87,14 +111,14 @@ RouletteContext* roulette_init(const Config *config, WallpaperList *wallpapers) 
     ctx->scroll_velocity = 0.0f;
     ctx->selecting_start_pos = 0.0f;
     
-    // Timing (in milliseconds)
-    ctx->start_duration = 800.0f;
-    ctx->scroll_duration = 2000.0f;
-    ctx->slow_duration = 2500.0f;
-    ctx->select_duration = 1000.0f;
-    ctx->show_duration = 1500.0f;
+    // Timing (in milliseconds) - use config values
+    ctx->start_duration = (float)config->roulette_start_duration;
+    ctx->scroll_duration = (float)config->roulette_scroll_duration;
+    ctx->slow_duration = (float)config->roulette_slow_duration;
+    ctx->select_duration = 1000.0f; // Not used anymore but keep for compatibility
+    ctx->show_duration = (float)config->roulette_show_duration;
     
-    ctx->max_velocity = 80.0f; // items per second
+    ctx->max_velocity = config->roulette_max_velocity; // items per second
     
     // Visual parameters
     ctx->item_width = config->thumbnail_width;
@@ -108,8 +132,22 @@ RouletteContext* roulette_init(const Config *config, WallpaperList *wallpapers) 
     int visible_count = wallpaper_list_visible_count(wallpapers);
     ctx->selected_index = rand() % visible_count;
     
-    // Calculate number of loops (3-5 full cycles)
-    ctx->loops = 3 + (rand() % 3);
+    // Calculate minimum distance needed based on animation duration and velocity
+    // Distance during acceleration (triangular area: 0.5 * max_vel * time)
+    float accel_distance = 0.5f * ctx->max_velocity * (ctx->start_duration / 1000.0f);
+    // Distance during constant velocity (reduced to start slowing earlier)
+    float scroll_distance = ctx->max_velocity * (ctx->scroll_duration / 1000.0f) * 0.7f;
+    // Distance during deceleration - give more room for gradual slowdown
+    float decel_distance = ctx->max_velocity * (ctx->slow_duration / 1000.0f) * 0.6f;
+    
+    float total_distance = accel_distance + scroll_distance + decel_distance;
+    
+    // Calculate loops needed to cover at least this distance
+    int min_loops = (int)(total_distance / visible_count);
+    if (min_loops < 2) min_loops = 2; // At least 2 loops
+    
+    // Add some randomness (0-1 extra loop for more control)
+    ctx->loops = min_loops + (rand() % 2);
     
     // Calculate target position - where the selected item should end up
     // We want the selected item to be centered, so target is selected_index
@@ -119,8 +157,8 @@ RouletteContext* roulette_init(const Config *config, WallpaperList *wallpapers) 
     ctx->animation_start_time = SDL_GetTicks();
     ctx->state_start_time = ctx->animation_start_time;
     
-    printf("Roulette: Selected wallpaper index %d, target position %.2f\n", 
-           ctx->selected_index, ctx->target_position);
+    printf("Roulette: Selected wallpaper index %d, target position %.2f (loops: %d, distance: %.1f)\n", 
+           ctx->selected_index, ctx->target_position, ctx->loops, total_distance);
     
     return ctx;
 }
@@ -137,14 +175,15 @@ void roulette_update(RouletteContext *ctx, WallpaperList *wallpapers, float delt
         case ROULETTE_STATE_STARTING: {
             // Ease into maximum velocity
             Uint32 state_elapsed = current_time - ctx->state_start_time;
-            float state_progress = state_elapsed / ctx->start_duration;
+            float state_progress = fminf(state_elapsed / ctx->start_duration, 1.0f);
             
             if (state_progress >= 1.0f) {
                 ctx->state = ROULETTE_STATE_SCROLLING;
                 ctx->state_start_time = current_time;
                 ctx->scroll_velocity = ctx->max_velocity;
-                printf("Roulette: Entering SCROLLING state\n");
+                printf("Roulette: Entering SCROLLING state at position %.2f\n", ctx->scroll_position);
             } else {
+                // Smooth acceleration using ease-in curve
                 ctx->scroll_velocity = ctx->max_velocity * ease_in_cubic(state_progress);
                 ctx->scroll_position += ctx->scroll_velocity * (delta_time / 1000.0f);
             }
@@ -172,7 +211,7 @@ void roulette_update(RouletteContext *ctx, WallpaperList *wallpapers, float delt
         case ROULETTE_STATE_SLOWING: {
             // Decelerate smoothly to land exactly on target
             Uint32 state_elapsed = current_time - ctx->state_start_time;
-            float state_progress = state_elapsed / ctx->slow_duration;
+            float state_progress = fminf(state_elapsed / ctx->slow_duration, 1.0f);
             
             if (state_progress >= 1.0f) {
                 // Ensure we end exactly at target
@@ -182,30 +221,31 @@ void roulette_update(RouletteContext *ctx, WallpaperList *wallpapers, float delt
                 ctx->state_start_time = current_time;
                 
 #ifdef HAVE_SDL_MIXER
-                // Play selection sound
+                // Stop any playing tick sounds and play selection sound
                 if (ctx->select_sound) {
-                    Mix_PlayChannel(-1, ctx->select_sound, 0);
+                    Mix_HaltChannel(ctx->tick_channel);
+                    Mix_PlayChannel(ctx->select_channel, ctx->select_sound, 0);
                 }
 #endif
                 
                 printf("Roulette: Entering SHOWING state - Selected wallpaper %d at position %.2f\n", 
                        ctx->selected_index, ctx->scroll_position);
             } else {
-                // Use ease-out curve to decelerate smoothly
-                float ease_progress = ease_out_cubic(state_progress);
+                // Use exponential ease-out for very smooth, natural deceleration
+                // This feels most like a real physical object coming to rest
+                float ease_progress = ease_out_expo(state_progress);
+                
+                // Store previous position to calculate velocity
+                float prev_position = ctx->scroll_position;
                 
                 // Interpolate from start position to target position
                 ctx->scroll_position = ctx->selecting_start_pos + 
                     (ctx->target_position - ctx->selecting_start_pos) * ease_progress;
                 
-                // Calculate instantaneous velocity for visual feedback
-                float remaining_distance = ctx->target_position - ctx->scroll_position;
-                float remaining_time = ctx->slow_duration - state_elapsed;
-                if (remaining_time > 0) {
-                    ctx->scroll_velocity = (remaining_distance / (remaining_time / 1000.0f));
-                } else {
-                    ctx->scroll_velocity = 0.0f;
-                }
+                // Calculate actual velocity based on position change
+                // This gives consistent velocity for visual feedback without affecting movement
+                float position_delta = ctx->scroll_position - prev_position;
+                ctx->scroll_velocity = fabsf(position_delta / (delta_time / 1000.0f));
             }
             break;
         }
@@ -253,7 +293,14 @@ void roulette_render(RouletteContext *ctx, WallpaperList *wallpapers) {
             // Only play tick during scrolling/slowing, not during showing
             if (ctx->state == ROULETTE_STATE_SCROLLING || 
                 (ctx->state == ROULETTE_STATE_SLOWING && ctx->scroll_velocity > 5.0f)) {
-                Mix_PlayChannel(-1, ctx->tick_sound, 0);
+                // Only play if the previous tick has finished or force stop it
+                if (!Mix_Playing(ctx->tick_channel)) {
+                    Mix_PlayChannel(ctx->tick_channel, ctx->tick_sound, 0);
+                } else {
+                    // Stop current tick and play new one for snappier feel
+                    Mix_HaltChannel(ctx->tick_channel);
+                    Mix_PlayChannel(ctx->tick_channel, ctx->tick_sound, 0);
+                }
             }
         }
 #endif

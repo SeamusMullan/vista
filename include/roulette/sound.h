@@ -10,13 +10,27 @@
 #include <SDL2/SDL_mixer.h>
 
 /**
- * @brief Generate tick sound for passing items
+ * @brief Load or generate tick sound for passing items
+ * @param audio_dir Optional directory containing audio files (can be NULL)
+ * @return Sound chunk or NULL on error
+ */
+Mix_Chunk* roulette_sound_load_tick(const char *audio_dir);
+
+/**
+ * @brief Load or generate selection sound for final choice
+ * @param audio_dir Optional directory containing audio files (can be NULL)
+ * @return Sound chunk or NULL on error
+ */
+Mix_Chunk* roulette_sound_load_select(const char *audio_dir);
+
+/**
+ * @brief Generate tick sound for passing items (procedural)
  * @return Generated sound chunk or NULL on error
  */
 Mix_Chunk* roulette_sound_generate_tick(void);
 
 /**
- * @brief Generate selection sound for final choice
+ * @brief Generate selection sound for final choice (procedural)
  * @return Generated sound chunk or NULL on error
  */
 Mix_Chunk* roulette_sound_generate_select(void);

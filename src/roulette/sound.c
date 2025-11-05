@@ -9,9 +9,18 @@
 
 #include <math.h>
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/stat.h>
 
 #define SAMPLE_RATE 44100
 #define PI 3.14159265359
+
+// Helper function to check if file exists
+static int file_exists(const char *path) {
+    struct stat st;
+    return (stat(path, &st) == 0);
+}
 
 // Generate a simple tick sound (short beep)
 Mix_Chunk* roulette_sound_generate_tick(void) {
@@ -74,7 +83,7 @@ Mix_Chunk* roulette_sound_generate_select(void) {
         
         // Fundamental + harmonics for richer sound
         float fundamental = sinf(2.0f * PI * freq * t);
-        float harmonic2 = 0.5f * sinf(2.0f * PI * freq * 2.0f * t);
+        float harmonic2 = 0.7f * sinf(2.0f * PI * freq * 2.0f * t);
         float harmonic3 = 0.25f * sinf(2.0f * PI * freq * 3.0f * t);
         
         float sample = (fundamental + harmonic2 + harmonic3) * envelope;
@@ -95,12 +104,80 @@ Mix_Chunk* roulette_sound_generate_select(void) {
     return chunk;
 }
 
+// Load tick sound from file or generate procedurally
+Mix_Chunk* roulette_sound_load_tick(const char *audio_dir) {
+    if (audio_dir) {
+        // Try to load from files - support multiple formats
+        const char *filenames[] = {
+            "tick.wav",
+            "tick.mp3",
+            "tick.ogg",
+            "roulette_tick.wav",
+            "roulette_tick.mp3",
+            "roulette_tick.ogg"
+        };
+        
+        char path[1024];
+        for (int i = 0; i < 6; i++) {
+            snprintf(path, sizeof(path), "%s/%s", audio_dir, filenames[i]);
+            if (file_exists(path)) {
+                Mix_Chunk *chunk = Mix_LoadWAV(path);
+                if (chunk) {
+                    printf("Loaded tick sound from: %s\n", path);
+                    return chunk;
+                }
+            }
+        }
+        
+        printf("No tick sound file found in %s, generating procedurally\n", audio_dir);
+    }
+    
+    // Fall back to procedural generation
+    return roulette_sound_generate_tick();
+}
+
+// Load selection sound from file or generate procedurally
+Mix_Chunk* roulette_sound_load_select(const char *audio_dir) {
+    if (audio_dir) {
+        // Try to load from files - support multiple formats
+        const char *filenames[] = {
+            "select.wav",
+            "select.mp3",
+            "select.ogg",
+            "roulette_select.wav",
+            "roulette_select.mp3",
+            "roulette_select.ogg",
+            "win.wav",
+            "win.mp3",
+            "win.ogg"
+        };
+        
+        char path[1024];
+        for (int i = 0; i < 9; i++) {
+            snprintf(path, sizeof(path), "%s/%s", audio_dir, filenames[i]);
+            if (file_exists(path)) {
+                Mix_Chunk *chunk = Mix_LoadWAV(path);
+                if (chunk) {
+                    printf("Loaded selection sound from: %s\n", path);
+                    return chunk;
+                }
+            }
+        }
+        
+        printf("No selection sound file found in %s, generating procedurally\n", audio_dir);
+    }
+    
+    // Fall back to procedural generation
+    return roulette_sound_generate_select();
+}
+
 void roulette_sound_free(Mix_Chunk *chunk) {
     if (!chunk) return;
-    if (chunk->abuf) {
-        free(chunk->abuf);
-    }
-    free(chunk);
+    
+    // Check if this is a procedurally generated sound (we allocated the buffer)
+    // vs a loaded sound (SDL_mixer allocated it)
+    // For safety, we'll just use Mix_FreeChunk which handles both cases
+    Mix_FreeChunk(chunk);
 }
 
 #endif /* HAVE_SDL_MIXER */

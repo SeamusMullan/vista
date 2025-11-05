@@ -65,6 +65,8 @@ typedef struct {
 #ifdef HAVE_SDL_MIXER
     Mix_Chunk *tick_sound;      /**< Sound when passing an item */
     Mix_Chunk *select_sound;    /**< Sound for final selection */
+    int tick_channel;           /**< Audio channel for tick sounds */
+    int select_channel;         /**< Audio channel for selection sound */
 #endif
     int last_item_index;        /**< Track last item for tick sound */
 } RouletteContext;

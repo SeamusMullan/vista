@@ -41,6 +41,15 @@ typedef struct {
     int window_height;                         /**< Window height */
     bool use_shaders;                          /**< Enable shader rendering */
     int thumbnails_per_row;                    /**< Number of thumbnails per row */
+    
+    char audio_dir[MAX_PATH];                  /**< Directory containing audio files for roulette */
+    
+    // Roulette animation timing (in milliseconds)
+    int roulette_start_duration;               /**< Acceleration phase duration */
+    int roulette_scroll_duration;              /**< Fast scrolling phase duration */
+    int roulette_slow_duration;                /**< Deceleration phase duration */
+    int roulette_show_duration;                /**< Final display duration */
+    float roulette_max_velocity;               /**< Maximum scroll velocity (items/sec) */
 
     const char *file_location;                   /**< Location of config file on disk */
 } Config;
