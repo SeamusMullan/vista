@@ -88,3 +88,44 @@ use_shaders = false
 
 # Number of thumbnails per row (grid mode)
 thumbnails_per_row = 5
+
+# ============================================================================
+# Roulette Mode Settings (for -r/--random flag)
+# ============================================================================
+# Directory containing custom audio files for roulette animation
+# If not specified or files not found, procedural sounds will be generated
+# Supported formats: .wav, .mp3, .ogg
+# Expected files:
+#   - tick.wav/mp3/ogg (or roulette_tick.*) - plays when passing wallpapers
+#   - select.wav/mp3/ogg (or roulette_select.* or win.*) - plays on final selection
+# audio_dir = ~/.config/vista/audio
+
+# Roulette animation timing (in milliseconds)
+# These control the speed and duration of the CS:GO-style animation
+# Defaults are well-balanced, but you can customize for different feels
+
+# Duration of initial acceleration phase (default: 800)
+# Lower = faster start, Higher = slower, more dramatic buildup
+roulette_start_duration = 800
+
+# Duration of fast scrolling phase (default: 2000)
+# The "blur" phase where items fly by at max speed
+# Lower = shorter animation, Higher = longer suspense
+roulette_scroll_duration = 2000
+
+# Duration of deceleration phase (default: 2500)
+# How long it takes to slow down and land on selection
+# Lower = quicker selection, Higher = more suspenseful slowdown
+roulette_slow_duration = 2500
+
+# Duration to show final selection (default: 1500)
+# How long the selected wallpaper pulses before applying
+# Lower = quicker apply, Higher = more celebration time
+roulette_show_duration = 1500
+
+# Maximum scroll velocity in items per second (default: 80.0)
+# How fast items scroll during the fast phase
+# Lower = slower, easier to see items (40-60)
+# Higher = faster, more dramatic blur effect (80-120)
+roulette_max_velocity = 80.0
+

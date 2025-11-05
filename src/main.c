@@ -13,6 +13,7 @@
 #include "../include/thumbnails.h"
 #include "../include/renderer.h"
 #include "../include/wallpaper.h"
+#include "../include/roulette/roulette.h"
 
 #ifdef USE_SHADERS
 #include "shader.h"
@@ -25,6 +26,7 @@ static void print_usage(const char *prog_name) {
     printf("Usage: %s [options]\n", prog_name);
     printf("Options:\n");
     printf("  -c, --config PATH   Use alternative config file\n");
+    printf("  -r, --random        Random wallpaper with roulette animation\n");
     printf("  -h, --help          Show this help message\n");
     printf("  -v, --version       Show version information\n");
 }
@@ -34,6 +36,7 @@ static void print_usage(const char *prog_name) {
  */
 int main(int argc, char *argv[]) {
     const char *config_path = NULL;
+    bool random_mode = false;
     
     // Parse command line arguments
     for (int i = 1; i < argc; i++) {
@@ -43,6 +46,8 @@ int main(int argc, char *argv[]) {
         } else if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--version") == 0) {
             printf("vista 1.0.0\n");
             return 0;
+        } else if (strcmp(argv[i], "-r") == 0 || strcmp(argv[i], "--random") == 0) {
+            random_mode = true;
         } else if (strcmp(argv[i], "-c") == 0 || strcmp(argv[i], "--config") == 0) {
             if (i + 1 < argc) {
                 config_path = argv[++i];
@@ -54,7 +59,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Initialize SDL
-    if (SDL_Init(SDL_INIT_VIDEO) < 0) {
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0) {
         fprintf(stderr, "SDL initialization failed: %s\n", SDL_GetError());
         return 1;
     }
@@ -113,9 +118,58 @@ int main(int argc, char *argv[]) {
     printf("Generating thumbnails...\n");
     wallpaper_list_generate_thumbnails(&wallpapers, &config);
 
+    // Random mode with roulette animation
+    if (random_mode) {
+        printf("Starting roulette animation...\n");
+        RouletteContext *roulette = roulette_init(&config, &wallpapers);
+        if (!roulette) {
+            fprintf(stderr, "Failed to initialize roulette\n");
+            wallpaper_list_free(&wallpapers);
+            IMG_Quit();
+            SDL_Quit();
+            return 1;
+        }
+        
+        int selected_index = roulette_run(roulette, &wallpapers);
+        roulette_cleanup(roulette);
+        
+        // Apply the selected wallpaper
+        Wallpaper *selected = wallpaper_list_get(&wallpapers, selected_index);
+        if (selected) {
+            printf("Applying selected wallpaper: %s\n", selected->path);
+            wallpaper_apply(selected->path, &config);
+            wallpaper_generate_palette(selected->path, &config);
+        }
+        
+        // Cleanup and exit
+        wallpaper_list_free(&wallpapers);
+        IMG_Quit();
+        SDL_Quit();
+        return 0;
+    }
+
     // Initialize renderer
+#ifdef USE_SHADERS
+    // Use OpenGL renderer if shaders are compiled in AND enabled in config
+    Renderer *renderer = NULL;
+    GLRenderer *gl_renderer = NULL;
+    
+    if (config.use_shaders) {
+        gl_renderer = gl_renderer_init(&config);
+        if (!gl_renderer) {
+            fprintf(stderr, "Failed to initialize OpenGL renderer, falling back to SDL\n");
+            renderer = renderer_init(&config);
+        } else {
+            printf("Using OpenGL shader renderer\n");
+        }
+    } else {
+        renderer = renderer_init(&config);
+    }
+#else
     Renderer *renderer = renderer_init(&config);
-    if (!renderer) {
+#endif
+    
+    if (!renderer && !gl_renderer) {
         fprintf(stderr, "Failed to initialize renderer\n");
         wallpaper_list_free(&wallpapers);
         SDL_Quit();
@@ -142,11 +196,27 @@ int main(int argc, char *argv[]) {
                             
                         case SDLK_LEFT:
                         case SDLK_h:
+#ifdef USE_SHADERS
+                            if (gl_renderer) {
+                                if (gl_renderer->selected_index > 0) {
+                                    gl_renderer->selected_index--;
+                                    gl_renderer->target_scroll += 220;
+                                }
+                            } else
+#endif
                             renderer_select_prev(renderer, &config);
                             break;
                             
                         case SDLK_RIGHT:
                         case SDLK_l:
+#ifdef USE_SHADERS
+                            if (gl_renderer) {
+                                if (gl_renderer->selected_index < wallpapers.count - 1) {
+                                    gl_renderer->selected_index++;
+                                    gl_renderer->target_scroll -= 220;
+                                }
+                            } else
+#endif
                             renderer_select_next(renderer, wallpapers.count - 1, &config);
                             break;
                             
@@ -165,11 +235,21 @@ int main(int argc, char *argv[]) {
                             break;
                             
                         case SDLK_f:
+#ifdef USE_SHADERS
+                            if (gl_renderer) {
+                                wallpaper_toggle_favorite(&wallpapers, gl_renderer->selected_index);
+                            } else
+#endif
                             wallpaper_toggle_favorite(&wallpapers, renderer->selected_index);
                             break;
                             
                         case SDLK_F2:
                             wallpaper_list_toggle_favorites_filter(&wallpapers);
+#ifdef USE_SHADERS
+                            if (gl_renderer) {
+                                gl_renderer->selected_index = 0;
+                            } else
+#endif
                             renderer->selected_index = 0;
                             printf("Favorites filter: %s\n", wallpapers.show_favorites_only ? "ON" : "OFF");
                             break;
@@ -180,9 +260,15 @@ int main(int argc, char *argv[]) {
                             break;
                             
                         case SDLK_RETURN:
-                        case SDLK_KP_ENTER:
-                            if (renderer->selected_index >= 0) {
-                                Wallpaper *wp = wallpaper_list_get(&wallpapers, renderer->selected_index);
+                        case SDLK_KP_ENTER: {
+                            int sel_idx = 0;
+#ifdef USE_SHADERS
+                            sel_idx = gl_renderer ? gl_renderer->selected_index : renderer->selected_index;
+#else
+                            sel_idx = renderer->selected_index;
+#endif
+                            if (sel_idx >= 0) {
+                                Wallpaper *wp = wallpaper_list_get(&wallpapers, sel_idx);
                                 if (wp) {
                                     printf("Applying wallpaper: %s\n", wp->path);
                                     wallpaper_apply(wp->path, &config);
@@ -191,6 +277,7 @@ int main(int argc, char *argv[]) {
                                 }
                             }
                             break;
+                        }
                     }
                     break;
                     
@@ -244,11 +331,21 @@ int main(int argc, char *argv[]) {
         }
         
         // Render
+#ifdef USE_SHADERS
+        if (gl_renderer) {
+            gl_renderer_draw_frame(gl_renderer, &wallpapers, &config);
+        } else
+#endif
         renderer_draw_frame(renderer, &wallpapers, &config);
         SDL_Delay(16); // ~60 FPS
     }
 
     // Cleanup
+#ifdef USE_SHADERS
+    if (gl_renderer) {
+        gl_renderer_cleanup(gl_renderer);
+    } else
+#endif
     renderer_cleanup(renderer);
     wallpaper_list_free(&wallpapers);
     IMG_Quit();

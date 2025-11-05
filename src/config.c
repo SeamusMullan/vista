@@ -76,6 +76,14 @@ Config config_default(void)
     config.window_height = 300;
     config.use_shaders = false;
     config.thumbnails_per_row = 5;
+    config.audio_dir[0] = '\0';
+    
+    // Roulette defaults
+    config.roulette_start_duration = 800;
+    config.roulette_scroll_duration = 2000;
+    config.roulette_slow_duration = 2500;
+    config.roulette_show_duration = 1500;
+    config.roulette_max_velocity = 80.0f;
 
     return config;
 }
@@ -209,6 +217,30 @@ Config config_parse(const char *path)
             else if (strcmp(k, "thumbnails_per_row") == 0)
             {
                 config.thumbnails_per_row = atoi(v);
+            }
+            else if (strcmp(k, "audio_dir") == 0)
+            {
+                expand_tilde(v, config.audio_dir, MAX_PATH);
+            }
+            else if (strcmp(k, "roulette_start_duration") == 0)
+            {
+                config.roulette_start_duration = atoi(v);
+            }
+            else if (strcmp(k, "roulette_scroll_duration") == 0)
+            {
+                config.roulette_scroll_duration = atoi(v);
+            }
+            else if (strcmp(k, "roulette_slow_duration") == 0)
+            {
+                config.roulette_slow_duration = atoi(v);
+            }
+            else if (strcmp(k, "roulette_show_duration") == 0)
+            {
+                config.roulette_show_duration = atoi(v);
+            }
+            else if (strcmp(k, "roulette_max_velocity") == 0)
+            {
+                config.roulette_max_velocity = atof(v);
             }
         }
     }

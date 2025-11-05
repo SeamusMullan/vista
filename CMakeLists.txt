@@ -37,6 +37,7 @@ find_package(PkgConfig REQUIRED)
 find_package(OpenSSL REQUIRED)
 pkg_check_modules(SDL2 REQUIRED sdl2)
 pkg_check_modules(SDL2_IMAGE REQUIRED SDL2_image)
+pkg_check_modules(SDL2_MIXER SDL2_mixer)
 
 # Include directories
 include_directories(
@@ -45,6 +46,14 @@ include_directories(
     ${SDL2_IMAGE_INCLUDE_DIRS}
 )
 
+if(SDL2_MIXER_FOUND)
+    include_directories(${SDL2_MIXER_INCLUDE_DIRS})
+    add_definitions(-DHAVE_SDL_MIXER)
+    message(STATUS "SDL2_mixer found - audio enabled")
+else()
+    message(STATUS "SDL2_mixer not found - building without audio")
+endif()
+
 # Sources
 set(SOURCES
     src/main.c
@@ -52,6 +61,8 @@ set(SOURCES
     src/thumbnails.c
     src/renderer.c
     src/wallpaper.c
+    src/roulette/roulette.c
+    src/roulette/sound.c
 )
 
 # Optional shader support
@@ -72,6 +83,10 @@ target_link_libraries(vista
     OpenSSL::Crypto
     m
 )
+
+if(SDL2_MIXER_FOUND)
+    target_link_libraries(vista ${SDL2_MIXER_LIBRARIES})
+endif()
 
 if(USE_SHADERS)
     target_link_libraries(vista
