@@ -239,6 +239,55 @@ void gl_renderer_draw_frame(GLRenderer *r, const WallpaperList *list, const Conf
     
     int visible_count = wallpaper_list_visible_count(list);
     
+    // === FIRST PASS: Render blurred background ===
+    Wallpaper *selected_wp = wallpaper_list_get((WallpaperList*)list, r->selected_index);
+    if (selected_wp && selected_wp->thumb) {
+        // Create background texture from selected wallpaper
+        GLuint bg_texture;
+        glGenTextures(1, &bg_texture);
+        glBindTexture(GL_TEXTURE_2D, bg_texture);
+        
+        SDL_Surface *surf = selected_wp->thumb;
+        GLenum format = (surf->format->BytesPerPixel == 4) ? GL_RGBA : GL_RGB;
+        glTexImage2D(GL_TEXTURE_2D, 0, format, surf->w, surf->h, 0, format, GL_UNSIGNED_BYTE, surf->pixels);
+        
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        
+        // Set background rendering mode
+        glUniform1f(glGetUniformLocation(r->shader_program, "isBackground"), 1.0f);
+        glUniform1f(glGetUniformLocation(r->shader_program, "selected"), 0.0f);
+        
+        // Setup transformation matrices for fullscreen quad
+        float model[16], projection[16];
+        
+        // Orthographic projection
+        float left = 0.0f, right = (float)config->window_width;
+        float bottom = (float)config->window_height, top = 0.0f;
+        projection[0] = 2.0f / (right - left); projection[1] = 0; projection[2] = 0; projection[3] = 0;
+        projection[4] = 0; projection[5] = 2.0f / (top - bottom); projection[6] = 0; projection[7] = 0;
+        projection[8] = 0; projection[9] = 0; projection[10] = -1; projection[11] = 0;
+        projection[12] = -(right + left) / (right - left); projection[13] = -(top + bottom) / (top - bottom); projection[14] = 0; projection[15] = 1;
+        
+        // Model matrix for fullscreen
+        model[0] = config->window_width; model[1] = 0; model[2] = 0; model[3] = 0;
+        model[4] = 0; model[5] = config->window_height; model[6] = 0; model[7] = 0;
+        model[8] = 0; model[9] = 0; model[10] = 1; model[11] = 0;
+        model[12] = 0; model[13] = 0; model[14] = 0; model[15] = 1;
+        
+        glUniformMatrix4fv(glGetUniformLocation(r->shader_program, "projection"), 1, GL_FALSE, projection);
+        glUniformMatrix4fv(glGetUniformLocation(r->shader_program, "model"), 1, GL_FALSE, model);
+        
+        // Draw fullscreen background quad
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+        
+        glDeleteTextures(1, &bg_texture);
+    }
+    
+    // === SECOND PASS: Render thumbnails on top ===
+    
     if (r->view_mode == 0) { // VIEW_MODE_HORIZONTAL
         int x = 20 + (int)r->current_scroll;
         int y = (config->window_height - config->thumbnail_height) / 2;
