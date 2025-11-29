@@ -9,7 +9,10 @@
 #include <unistd.h>
 #include <pwd.h>
 #include <openssl/md5.h>
-#include <SDL2/SDL_image.h>
+#include <SDL3/SDL.h>
+#ifdef HAVE_SDL_IMAGE
+#include <SDL3_image/SDL_image.h>
+#endif
 
 static bool is_image_file(const char *filename) {
     const char *ext = strrchr(filename, '.');
@@ -117,30 +120,57 @@ SDL_Surface* thumbnail_load_or_cache(const char *path, int width, int height) {
     snprintf(cache_path, sizeof(cache_path), "%s/%s_%dx%d.png", cache_dir, md5, width, height);
     
     // Try to load from cache
+#ifdef HAVE_SDL_IMAGE
     SDL_Surface *thumb = IMG_Load(cache_path);
+#else
+    // SDL3 has built-in PNG support
+    SDL_Surface *thumb = SDL_LoadPNG(cache_path);
+#endif
     if (thumb) {
         return thumb;
     }
-    
+
     // Cache miss - load original and create thumbnail
-    SDL_Surface *original = IMG_Load(path);
+    SDL_Surface *original = NULL;
+#ifdef HAVE_SDL_IMAGE
+    original = IMG_Load(path);
+#else
+    // SDL3 built-in loaders: try PNG first, then BMP, then JPG via stb_image
+    // Check file extension to determine loader
+    const char *ext = strrchr(path, '.');
+    if (ext) {
+        if (strcasecmp(ext, ".png") == 0) {
+            original = SDL_LoadPNG(path);
+        } else if (strcasecmp(ext, ".bmp") == 0) {
+            original = SDL_LoadBMP(path);
+        } else if (strcasecmp(ext, ".jpg") == 0 || strcasecmp(ext, ".jpeg") == 0) {
+            // SDL3 has built-in JPEG support via stb_image
+            // Try loading as a generic image file using SDL_LoadBMP_IO with stb_image fallback
+            // Actually, SDL3 core only has BMP and PNG. For JPG, we need SDL_image or stb_image
+            fprintf(stderr, "Warning: JPEG format requires SDL_image. Skipping %s\n", path);
+        }
+    }
+#endif
     if (!original) {
-        fprintf(stderr, "Failed to load image %s: %s\n", path, IMG_GetError());
+        fprintf(stderr, "Failed to load image %s: %s\n", path, SDL_GetError());
         return NULL;
     }
     
     // Create scaled surface
-    thumb = SDL_CreateRGBSurface(0, width, height, 32,
-                                              0x00FF0000, 0x0000FF00,
-                                              0x000000FF, 0xFF000000);
+    thumb = SDL_CreateSurface(width, height, SDL_PIXELFORMAT_RGBA8888);
     
     SDL_Rect dest = {0, 0, width, height};
-    SDL_BlitScaled(original, NULL, thumb, &dest);
+    SDL_BlitSurfaceScaled(original, NULL, thumb, &dest, SDL_SCALEMODE_LINEAR);
     
     // Save to cache
+#ifdef HAVE_SDL_IMAGE
     IMG_SavePNG(thumb, cache_path);
+#else
+    // SDL3 has built-in PNG saving
+    SDL_SavePNG(thumb, cache_path);
+#endif
     
-    SDL_FreeSurface(original);
+    SDL_DestroySurface(original);
     return thumb;
 }
 
@@ -149,7 +179,7 @@ void wallpaper_list_free(WallpaperList *list) {
         free(list->items[i].path);
         free(list->items[i].name);
         if (list->items[i].thumb) {
-            SDL_FreeSurface(list->items[i].thumb);
+            SDL_DestroySurface(list->items[i].thumb);
         }
     }
     free(list->items);

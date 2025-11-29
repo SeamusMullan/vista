@@ -6,9 +6,9 @@
 #ifndef ROULETTE_H
 #define ROULETTE_H
 
-#include <SDL2/SDL.h>
+#include <SDL3/SDL.h>
 #ifdef HAVE_SDL_MIXER
-#include <SDL2/SDL_mixer.h>
+#include <SDL3_mixer/SDL_mixer.h>
 #endif
 #include "../thumbnails.h"
 #include "../config.h"
@@ -63,10 +63,11 @@ typedef struct {
     
     // Audio
 #ifdef HAVE_SDL_MIXER
-    Mix_Chunk *tick_sound;      /**< Sound when passing an item */
-    Mix_Chunk *select_sound;    /**< Sound for final selection */
-    int tick_channel;           /**< Audio channel for tick sounds */
-    int select_channel;         /**< Audio channel for selection sound */
+    MIX_Mixer *mixer;           /**< Audio mixer */
+    MIX_Audio *tick_sound;      /**< Sound when passing an item */
+    MIX_Audio *select_sound;    /**< Sound for final selection */
+    MIX_Track *tick_track;      /**< Track for tick sounds */
+    MIX_Track *select_track;    /**< Track for selection sound */
 #endif
     int last_item_index;        /**< Track last item for tick sound */
 } RouletteContext;

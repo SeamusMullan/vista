@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <SDL2/SDL.h>
+#include <SDL3/SDL.h>
 
 static char* read_file(const char *path) {
     FILE *f = fopen(path, "rb");
@@ -69,21 +69,19 @@ GLRenderer* gl_renderer_init(const Config *config) {
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-    
+
     // Enable transparency
     SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
-    
+
     // Create window with transparency support
     r->window = SDL_CreateWindow(
         "vista - wallpaper switcher (OpenGL)",
-        SDL_WINDOWPOS_CENTERED,
-        SDL_WINDOWPOS_CENTERED,
         config->window_width,
         config->window_height,
-        SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_BORDERLESS
+        SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS
     );
-    
+
     // Set window opacity (this may need compositor support on Linux)
     SDL_SetWindowOpacity(r->window, 0.95f);
     
@@ -188,11 +186,13 @@ static void calculate_avg_color(SDL_Surface *surf, float *r, float *g, float *b)
     
     SDL_LockSurface(surf);
     
+    const SDL_PixelFormatDetails *details = SDL_GetPixelFormatDetails(surf->format);
+    
     for (int y = 0; y < surf->h; y += step) {
         for (int x = 0; x < surf->w; x += step) {
             Uint32 pixel = ((Uint32*)surf->pixels)[y * (surf->pitch / 4) + x];
             Uint8 pr, pg, pb;
-            SDL_GetRGB(pixel, surf->format, &pr, &pg, &pb);
+            SDL_GetRGB(pixel, details, NULL, &pr, &pg, &pb);
             
             sum_r += pr;
             sum_g += pg;
@@ -248,7 +248,7 @@ void gl_renderer_draw_frame(GLRenderer *r, const WallpaperList *list, const Conf
         glBindTexture(GL_TEXTURE_2D, bg_texture);
         
         SDL_Surface *surf = selected_wp->thumb;
-        GLenum format = (surf->format->BytesPerPixel == 4) ? GL_RGBA : GL_RGB;
+        GLenum format = (SDL_BYTESPERPIXEL(surf->format) == 4) ? GL_RGBA : GL_RGB;
         glTexImage2D(GL_TEXTURE_2D, 0, format, surf->w, surf->h, 0, format, GL_UNSIGNED_BYTE, surf->pixels);
         
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -321,7 +321,7 @@ void gl_renderer_draw_frame(GLRenderer *r, const WallpaperList *list, const Conf
                 glBindTexture(GL_TEXTURE_2D, texture);
                 
                 SDL_Surface *surf = wp->thumb;
-                GLenum format = (surf->format->BytesPerPixel == 4) ? GL_RGBA : GL_RGB;
+                GLenum format = (SDL_BYTESPERPIXEL(surf->format) == 4) ? GL_RGBA : GL_RGB;
                 glTexImage2D(GL_TEXTURE_2D, 0, format, surf->w, surf->h, 0, format, GL_UNSIGNED_BYTE, surf->pixels);
                 
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -386,7 +386,7 @@ void gl_renderer_cleanup(GLRenderer *r) {
     if (r->vao) glDeleteVertexArrays(1, &r->vao);
     if (r->vbo) glDeleteBuffers(1, &r->vbo);
     if (r->shader_program) glDeleteProgram(r->shader_program);
-    if (r->gl_context) SDL_GL_DeleteContext(r->gl_context);
+    if (r->gl_context) SDL_GL_DestroyContext(r->gl_context);
     if (r->window) SDL_DestroyWindow(r->window);
     free(r);
 }

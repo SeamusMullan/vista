@@ -7,39 +7,43 @@
 #define ROULETTE_SOUND_H
 
 #ifdef HAVE_SDL_MIXER
-#include <SDL2/SDL_mixer.h>
+#include <SDL3_mixer/SDL_mixer.h>
 
 /**
  * @brief Load or generate tick sound for passing items
+ * @param mixer The mixer to create audio for
  * @param audio_dir Optional directory containing audio files (can be NULL)
- * @return Sound chunk or NULL on error
+ * @return Sound audio or NULL on error
  */
-Mix_Chunk* roulette_sound_load_tick(const char *audio_dir);
+MIX_Audio* roulette_sound_load_tick(MIX_Mixer *mixer, const char *audio_dir);
 
 /**
  * @brief Load or generate selection sound for final choice
+ * @param mixer The mixer to create audio for
  * @param audio_dir Optional directory containing audio files (can be NULL)
- * @return Sound chunk or NULL on error
+ * @return Sound audio or NULL on error
  */
-Mix_Chunk* roulette_sound_load_select(const char *audio_dir);
+MIX_Audio* roulette_sound_load_select(MIX_Mixer *mixer, const char *audio_dir);
 
 /**
  * @brief Generate tick sound for passing items (procedural)
- * @return Generated sound chunk or NULL on error
+ * @param mixer The mixer to create audio for
+ * @return Generated sound audio or NULL on error
  */
-Mix_Chunk* roulette_sound_generate_tick(void);
+MIX_Audio* roulette_sound_generate_tick(MIX_Mixer *mixer);
 
 /**
  * @brief Generate selection sound for final choice (procedural)
- * @return Generated sound chunk or NULL on error
+ * @param mixer The mixer to create audio for
+ * @return Generated sound audio or NULL on error
  */
-Mix_Chunk* roulette_sound_generate_select(void);
+MIX_Audio* roulette_sound_generate_select(MIX_Mixer *mixer);
 
 /**
- * @brief Free a generated sound chunk
- * @param chunk Sound chunk to free
+ * @brief Free a generated sound audio
+ * @param audio Sound audio to free
  */
-void roulette_sound_free(Mix_Chunk *chunk);
+void roulette_sound_free(MIX_Audio *audio);
 
 #endif /* HAVE_SDL_MIXER */
 

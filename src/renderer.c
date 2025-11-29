@@ -1,5 +1,6 @@
 #include "renderer.h"
 #include <stdio.h>
+#include <stdlib.h>
 
 Renderer* renderer_init(const Config *config) {
     Renderer *r = malloc(sizeof(Renderer));
@@ -19,11 +20,9 @@ Renderer* renderer_init(const Config *config) {
     // Create window
     r->window = SDL_CreateWindow(
         "vista - wallpaper switcher",
-        SDL_WINDOWPOS_CENTERED,
-        SDL_WINDOWPOS_CENTERED,
         config->window_width,
         config->window_height,
-        SDL_WINDOW_SHOWN | SDL_WINDOW_BORDERLESS
+        SDL_WINDOW_BORDERLESS
     );
     
     if (!r->window) {
@@ -32,7 +31,7 @@ Renderer* renderer_init(const Config *config) {
         return NULL;
     }
     
-    r->renderer = SDL_CreateRenderer(r->window, -1, SDL_RENDERER_ACCELERATED);
+    r->renderer = SDL_CreateRenderer(r->window, NULL);
     if (!r->renderer) {
         fprintf(stderr, "Failed to create renderer: %s\n", SDL_GetError());
         SDL_DestroyWindow(r->window);
@@ -66,15 +65,17 @@ void renderer_draw_frame(Renderer *r, const WallpaperList *list, const Config *c
             if (wp && wp->thumb) {
                 SDL_Texture *tex = SDL_CreateTextureFromSurface(r->renderer, wp->thumb);
                 
-                SDL_Rect dest = {x, y, config->thumbnail_width, config->thumbnail_height};
-                SDL_RenderCopy(r->renderer, tex, NULL, &dest);
+                SDL_FRect dest = {(float)x, (float)y, (float)config->thumbnail_width, (float)config->thumbnail_height};
+                SDL_RenderTexture(r->renderer, tex, NULL, &dest);
                 
                 // Highlight selected
                 if (i == r->selected_index) {
                     SDL_SetRenderDrawColor(r->renderer, 100, 200, 255, 255);
-                    SDL_RenderDrawRect(r->renderer, &dest);
-                    SDL_RenderDrawRect(r->renderer, &(SDL_Rect){dest.x-1, dest.y-1, dest.w+2, dest.h+2});
-                    SDL_RenderDrawRect(r->renderer, &(SDL_Rect){dest.x-2, dest.y-2, dest.w+4, dest.h+4});
+                    SDL_RenderRect(r->renderer, &dest);
+                    SDL_FRect border1 = {dest.x-1, dest.y-1, dest.w+2, dest.h+2};
+                    SDL_RenderRect(r->renderer, &border1);
+                    SDL_FRect border2 = {dest.x-2, dest.y-2, dest.w+4, dest.h+4};
+                    SDL_RenderRect(r->renderer, &border2);
                 }
                 
                 SDL_DestroyTexture(tex);
@@ -100,15 +101,17 @@ void renderer_draw_frame(Renderer *r, const WallpaperList *list, const Config *c
                 
                 SDL_Texture *tex = SDL_CreateTextureFromSurface(r->renderer, wp->thumb);
                 
-                SDL_Rect dest = {x, y, config->thumbnail_width, config->thumbnail_height};
-                SDL_RenderCopy(r->renderer, tex, NULL, &dest);
+                SDL_FRect dest = {(float)x, (float)y, (float)config->thumbnail_width, (float)config->thumbnail_height};
+                SDL_RenderTexture(r->renderer, tex, NULL, &dest);
                 
                 // Highlight selected
                 if (i == r->selected_index) {
                     SDL_SetRenderDrawColor(r->renderer, 100, 200, 255, 255);
-                    SDL_RenderDrawRect(r->renderer, &dest);
-                    SDL_RenderDrawRect(r->renderer, &(SDL_Rect){dest.x-1, dest.y-1, dest.w+2, dest.h+2});
-                    SDL_RenderDrawRect(r->renderer, &(SDL_Rect){dest.x-2, dest.y-2, dest.w+4, dest.h+4});
+                    SDL_RenderRect(r->renderer, &dest);
+                    SDL_FRect border1 = {dest.x-1, dest.y-1, dest.w+2, dest.h+2};
+                    SDL_RenderRect(r->renderer, &border1);
+                    SDL_FRect border2 = {dest.x-2, dest.y-2, dest.w+4, dest.h+4};
+                    SDL_RenderRect(r->renderer, &border2);
                 }
                 
                 SDL_DestroyTexture(tex);
@@ -184,12 +187,12 @@ void renderer_draw_help_overlay(Renderer *r) {
     // Draw semi-transparent background
     SDL_SetRenderDrawBlendMode(r->renderer, SDL_BLENDMODE_BLEND);
     SDL_SetRenderDrawColor(r->renderer, 0, 0, 0, 200);
-    SDL_Rect overlay = {100, 50, 600, 500};
+    SDL_FRect overlay = {100.0f, 50.0f, 600.0f, 500.0f};
     SDL_RenderFillRect(r->renderer, &overlay);
     
     // Draw border
     SDL_SetRenderDrawColor(r->renderer, 100, 200, 255, 255);
-    SDL_RenderDrawRect(r->renderer, &overlay);
+    SDL_RenderRect(r->renderer, &overlay);
     
     // Note: Text rendering would require SDL_ttf
     // For now, this creates the overlay box

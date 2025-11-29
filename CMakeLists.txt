@@ -31,27 +31,97 @@ set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
 # Options
 option(USE_SHADERS "Enable OpenGL shader support" OFF)
 option(BUILD_DOCS "Build documentation with Doxygen" ON)
+option(USE_SYSTEM_SDL "Use system SDL3 libraries instead of submodules" OFF)
 
 # Dependencies
-find_package(PkgConfig REQUIRED)
 find_package(OpenSSL REQUIRED)
-pkg_check_modules(SDL2 REQUIRED sdl2)
-pkg_check_modules(SDL2_IMAGE REQUIRED SDL2_image)
-pkg_check_modules(SDL2_MIXER SDL2_mixer)
+
+if(USE_SYSTEM_SDL)
+    # Use system-installed SDL3 libraries
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(SDL3 REQUIRED sdl3)
+    pkg_check_modules(SDL3_IMAGE sdl3-image)
+    pkg_check_modules(SDL3_MIXER sdl3-mixer)
+    pkg_check_modules(SDL3_TTF sdl3-ttf)
+
+    set(SDL3_LIBRARIES_TO_LINK ${SDL3_LIBRARIES})
+    set(SDL3_INCLUDE_DIRS_TO_USE ${SDL3_INCLUDE_DIRS})
+else()
+    # Build SDL3 from submodules
+    message(STATUS "Building SDL3 from submodules")
+
+    # Build SDL3 core
+    set(SDL_SHARED ON CACHE BOOL "Build SDL3 as shared library")
+    set(SDL_STATIC OFF CACHE BOOL "Don't build SDL3 as static library")
+    add_subdirectory(submodules/SDL)
+
+    # Build SDL3_image
+    set(SDL3IMAGE_INSTALL OFF CACHE BOOL "Don't install SDL3_image")
+    set(SDL3IMAGE_VENDORED ON CACHE BOOL "Use vendored dependencies")
+    set(SDL3IMAGE_DEPS_SHARED OFF CACHE BOOL "Build dependencies as static")
+    add_subdirectory(submodules/SDL_image)
+
+    # Build SDL3_mixer
+    set(SDL3MIXER_INSTALL OFF CACHE BOOL "Don't install SDL3_mixer")
+    set(SDL3MIXER_VENDORED ON CACHE BOOL "Use vendored dependencies")
+    add_subdirectory(submodules/SDL_mixer)
+
+    # Build SDL3_ttf
+    set(SDL3TTF_INSTALL OFF CACHE BOOL "Don't install SDL3_ttf")
+    set(SDL3TTF_VENDORED ON CACHE BOOL "Use vendored dependencies")
+    add_subdirectory(submodules/SDL_ttf)
+
+    # Set up include directories and libraries
+    set(SDL3_LIBRARIES_TO_LINK SDL3::SDL3)
+    set(SDL3_INCLUDE_DIRS_TO_USE
+        ${CMAKE_SOURCE_DIR}/submodules/SDL/include
+        ${CMAKE_BINARY_DIR}/submodules/SDL/include
+    )
+
+    # Always enable SDL_image and SDL_mixer when building from source
+    set(SDL3_IMAGE_FOUND TRUE)
+    set(SDL3_MIXER_FOUND TRUE)
+    set(SDL3_TTF_FOUND TRUE)
+endif()
 
 # Include directories
 include_directories(
     ${CMAKE_SOURCE_DIR}/include
-    ${SDL2_INCLUDE_DIRS}
-    ${SDL2_IMAGE_INCLUDE_DIRS}
+    ${SDL3_INCLUDE_DIRS_TO_USE}
 )
 
-if(SDL2_MIXER_FOUND)
-    include_directories(${SDL2_MIXER_INCLUDE_DIRS})
-    add_definitions(-DHAVE_SDL_MIXER)
-    message(STATUS "SDL2_mixer found - audio enabled")
+if(SDL3_IMAGE_FOUND)
+    if(NOT USE_SYSTEM_SDL)
+        include_directories(${CMAKE_SOURCE_DIR}/submodules/SDL_image/include)
+    else()
+        include_directories(${SDL3_IMAGE_INCLUDE_DIRS})
+    endif()
+    add_definitions(-DHAVE_SDL_IMAGE)
+    message(STATUS "SDL3_image enabled")
 else()
-    message(STATUS "SDL2_mixer not found - building without audio")
+    message(WARNING "SDL3_image not found - some image formats may not be supported")
+endif()
+
+if(SDL3_MIXER_FOUND)
+    if(NOT USE_SYSTEM_SDL)
+        include_directories(${CMAKE_SOURCE_DIR}/submodules/SDL_mixer/include)
+    else()
+        include_directories(${SDL3_MIXER_INCLUDE_DIRS})
+    endif()
+    add_definitions(-DHAVE_SDL_MIXER)
+    message(STATUS "SDL3_mixer enabled")
+else()
+    message(STATUS "SDL3_mixer not found - building without audio")
+endif()
+
+if(SDL3_TTF_FOUND)
+    if(NOT USE_SYSTEM_SDL)
+        include_directories(${CMAKE_SOURCE_DIR}/submodules/SDL_ttf/include)
+    else()
+        include_directories(${SDL3_TTF_INCLUDE_DIRS})
+    endif()
+    add_definitions(-DHAVE_SDL_TTF)
+    message(STATUS "SDL3_ttf enabled")
 endif()
 
 # Sources
@@ -77,15 +147,43 @@ endif()
 add_executable(vista ${SOURCES})
 
 # Link libraries (portable)
-target_link_libraries(vista
-    ${SDL2_LIBRARIES}
-    ${SDL2_IMAGE_LIBRARIES}
-    OpenSSL::Crypto
-    m
-)
+if(USE_SYSTEM_SDL)
+    target_link_libraries(vista
+        ${SDL3_LIBRARIES}
+        OpenSSL::Crypto
+        m
+    )
 
-if(SDL2_MIXER_FOUND)
-    target_link_libraries(vista ${SDL2_MIXER_LIBRARIES})
+    if(SDL3_IMAGE_FOUND)
+        target_link_libraries(vista ${SDL3_IMAGE_LIBRARIES})
+    endif()
+
+    if(SDL3_MIXER_FOUND)
+        target_link_libraries(vista ${SDL3_MIXER_LIBRARIES})
+    endif()
+
+    if(SDL3_TTF_FOUND)
+        target_link_libraries(vista ${SDL3_TTF_LIBRARIES})
+    endif()
+else()
+    # Link against submodule-built libraries
+    target_link_libraries(vista
+        SDL3::SDL3
+        OpenSSL::Crypto
+        m
+    )
+
+    if(SDL3_IMAGE_FOUND)
+        target_link_libraries(vista SDL3_image::SDL3_image)
+    endif()
+
+    if(SDL3_MIXER_FOUND)
+        target_link_libraries(vista SDL3_mixer::SDL3_mixer)
+    endif()
+
+    if(SDL3_TTF_FOUND)
+        target_link_libraries(vista SDL3_ttf::SDL3_ttf)
+    endif()
 endif()
 
 if(USE_SHADERS)

@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <time.h>
+#include <SDL3/SDL.h>
 
 // Easing functions
 static float ease_out_cubic(float t) {
@@ -44,33 +45,37 @@ RouletteContext* roulette_init(const Config *config, WallpaperList *wallpapers) 
     }
     
 #ifdef HAVE_SDL_MIXER
-    // Initialize SDL_mixer
-    if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048) < 0) {
-        fprintf(stderr, "SDL_mixer could not initialize: %s\n", Mix_GetError());
+    // Initialize SDL3_mixer
+    // Create a mixer
+    SDL_AudioSpec spec;
+    spec.freq = 44100;
+    spec.format = SDL_AUDIO_S16;
+    spec.channels = 2;
+
+    ctx->mixer = MIX_CreateMixer(&spec);
+    if (!ctx->mixer) {
+        fprintf(stderr, "SDL3_mixer could not initialize: %s\n", SDL_GetError());
         // Continue anyway - audio is optional
     } else {
-        // Allocate more mixing channels to prevent overlap
-        Mix_AllocateChannels(8);
-        
         // Load or generate sound effects
         const char *audio_dir = (config->audio_dir[0] != '\0') ? config->audio_dir : NULL;
-        
+
         if (audio_dir) {
             printf("Looking for audio files in: %s\n", audio_dir);
         }
-        
-        ctx->tick_sound = roulette_sound_load_tick(audio_dir);
-        ctx->select_sound = roulette_sound_load_select(audio_dir);
-        
+
+        ctx->tick_sound = roulette_sound_load_tick(ctx->mixer, audio_dir);
+        ctx->select_sound = roulette_sound_load_select(ctx->mixer, audio_dir);
+
         if (!ctx->tick_sound || !ctx->select_sound) {
             fprintf(stderr, "Warning: Could not load/generate sound effects\n");
         } else {
             printf("Audio enabled: Sound effects ready\n");
         }
-        
-        // Reserve dedicated channels for different sounds
-        ctx->tick_channel = 0;    // Channel 0 for tick sounds
-        ctx->select_channel = 1;  // Channel 1 for selection sound
+
+        // Create tracks for playing sounds
+        ctx->tick_track = MIX_CreateTrack(ctx->mixer);
+        ctx->select_track = MIX_CreateTrack(ctx->mixer);
     }
 #else
     printf("Built without SDL_mixer - no audio\n");
@@ -79,16 +84,19 @@ RouletteContext* roulette_init(const Config *config, WallpaperList *wallpapers) 
     ctx->last_item_index = -1;
     
     // Create fullscreen window
-    SDL_DisplayMode display_mode;
-    SDL_GetCurrentDisplayMode(0, &display_mode);
-    
+    SDL_DisplayID display_id = SDL_GetPrimaryDisplay();
+    const SDL_DisplayMode *display_mode = SDL_GetDesktopDisplayMode(display_id);
+    int w = 1920, h = 1080;
+    if (display_mode) {
+        w = display_mode->w;
+        h = display_mode->h;
+    }
+
     ctx->window = SDL_CreateWindow(
         "Vista - Random Wallpaper",
-        SDL_WINDOWPOS_CENTERED,
-        SDL_WINDOWPOS_CENTERED,
-        display_mode.w,
-        display_mode.h,
-        SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_SHOWN
+        w,
+        h,
+        SDL_WINDOW_FULLSCREEN
     );
     
     if (!ctx->window) {
@@ -97,7 +105,7 @@ RouletteContext* roulette_init(const Config *config, WallpaperList *wallpapers) 
         return NULL;
     }
     
-    ctx->renderer = SDL_CreateRenderer(ctx->window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    ctx->renderer = SDL_CreateRenderer(ctx->window, NULL);
     if (!ctx->renderer) {
         fprintf(stderr, "Failed to create renderer: %s\n", SDL_GetError());
         SDL_DestroyWindow(ctx->window);
@@ -105,6 +113,8 @@ RouletteContext* roulette_init(const Config *config, WallpaperList *wallpapers) 
         return NULL;
     }
     
+    SDL_SetRenderVSync(ctx->renderer, 1);
+
     // Initialize animation parameters
     ctx->state = ROULETTE_STATE_STARTING;
     ctx->scroll_position = 0.0f;
@@ -124,8 +134,8 @@ RouletteContext* roulette_init(const Config *config, WallpaperList *wallpapers) 
     ctx->item_width = config->thumbnail_width;
     ctx->item_height = config->thumbnail_height;
     ctx->item_spacing = 40;
-    ctx->center_x = display_mode.w / 2;
-    ctx->center_y = display_mode.h / 2;
+    ctx->center_x = w / 2;
+    ctx->center_y = h / 2;
     
     // Select random wallpaper and calculate target
     srand(time(NULL));
@@ -219,12 +229,13 @@ void roulette_update(RouletteContext *ctx, WallpaperList *wallpapers, float delt
                 ctx->scroll_velocity = 0.0f;
                 ctx->state = ROULETTE_STATE_SHOWING;
                 ctx->state_start_time = current_time;
-                
+
 #ifdef HAVE_SDL_MIXER
                 // Stop any playing tick sounds and play selection sound
-                if (ctx->select_sound) {
-                    Mix_HaltChannel(ctx->tick_channel);
-                    Mix_PlayChannel(ctx->select_channel, ctx->select_sound, 0);
+                if (ctx->select_sound && ctx->tick_track && ctx->select_track) {
+                    MIX_StopTrack(ctx->tick_track, 0);
+                    MIX_SetTrackAudio(ctx->select_track, ctx->select_sound);
+                    MIX_PlayTrack(ctx->select_track, 0);
                 }
 #endif
                 
@@ -304,18 +315,14 @@ void roulette_render(RouletteContext *ctx, WallpaperList *wallpapers) {
     
     if (current_item != ctx->last_item_index) {
 #ifdef HAVE_SDL_MIXER
-        if (ctx->tick_sound) {
+        if (ctx->tick_sound && ctx->tick_track) {
             // Only play tick during scrolling/slowing, not during showing
-            if (ctx->state == ROULETTE_STATE_SCROLLING || 
+            if (ctx->state == ROULETTE_STATE_SCROLLING ||
                 (ctx->state == ROULETTE_STATE_SLOWING && ctx->scroll_velocity > 5.0f)) {
-                // Only play if the previous tick has finished or force stop it
-                if (!Mix_Playing(ctx->tick_channel)) {
-                    Mix_PlayChannel(ctx->tick_channel, ctx->tick_sound, 0);
-                } else {
-                    // Stop current tick and play new one for snappier feel
-                    Mix_HaltChannel(ctx->tick_channel);
-                    Mix_PlayChannel(ctx->tick_channel, ctx->tick_sound, 0);
-                }
+                // Stop current tick and play new one for snappier feel
+                MIX_StopTrack(ctx->tick_track, 0);
+                MIX_SetTrackAudio(ctx->tick_track, ctx->tick_sound);
+                MIX_PlayTrack(ctx->tick_track, 0);
             }
         }
 #endif
@@ -334,11 +341,11 @@ void roulette_render(RouletteContext *ctx, WallpaperList *wallpapers) {
     // Draw center indicator (the "selector") - perfectly centered
     int indicator_width = ctx->item_width + 20;
     int indicator_height = ctx->item_height + 20;
-    SDL_Rect indicator = {
-        ctx->center_x - indicator_width / 2,
-        ctx->center_y - indicator_height / 2,
-        indicator_width,
-        indicator_height
+    SDL_FRect indicator = {
+        (float)(ctx->center_x - indicator_width / 2),
+        (float)(ctx->center_y - indicator_height / 2),
+        (float)indicator_width,
+        (float)indicator_height
     };
     
     // Draw glow effect based on state
@@ -358,12 +365,12 @@ void roulette_render(RouletteContext *ctx, WallpaperList *wallpapers) {
     
     // Draw multiple glow layers for depth
     for (int i = 0; i < 3; i++) {
-        SDL_Rect glow = indicator;
+        SDL_FRect glow = indicator;
         glow.x -= (i + 1) * 3;
         glow.y -= (i + 1) * 3;
         glow.w += (i + 1) * 6;
         glow.h += (i + 1) * 6;
-        SDL_RenderDrawRect(ctx->renderer, &glow);
+        SDL_RenderRect(ctx->renderer, &glow);
     }
     
     // Draw wallpaper thumbnails in a horizontal scrolling strip
@@ -402,11 +409,11 @@ void roulette_render(RouletteContext *ctx, WallpaperList *wallpapers) {
         float scaled_height = ctx->item_height * scale;
         
         // Round to integers only at the final step for SDL_Rect
-        SDL_Rect dest = {
-            (int)(x_float + (ctx->item_width - scaled_width) / 2.0f),
-            (int)(y_float + (ctx->item_height - scaled_height) / 2.0f),
-            (int)scaled_width,
-            (int)scaled_height
+        SDL_FRect dest = {
+            x_float + (ctx->item_width - scaled_width) / 2.0f,
+            y_float + (ctx->item_height - scaled_height) / 2.0f,
+            scaled_width,
+            scaled_height
         };
         
         // Create texture from surface if needed
@@ -414,13 +421,13 @@ void roulette_render(RouletteContext *ctx, WallpaperList *wallpapers) {
         if (texture) {
             // Set alpha based on distance
             SDL_SetTextureAlphaMod(texture, (Uint8)(255 * dist_factor));
-            SDL_RenderCopy(ctx->renderer, texture, NULL, &dest);
+            SDL_RenderTexture(ctx->renderer, texture, NULL, &dest);
             SDL_DestroyTexture(texture);
         }
         
         // Draw border
         SDL_SetRenderDrawColor(ctx->renderer, 100, 100, 100, (Uint8)(255 * dist_factor));
-        SDL_RenderDrawRect(ctx->renderer, &dest);
+        SDL_RenderRect(ctx->renderer, &dest);
     }
     
     // Draw text information
@@ -440,8 +447,8 @@ int roulette_run(RouletteContext *ctx, WallpaperList *wallpapers) {
         // Handle events
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
-            if (event.type == SDL_QUIT || 
-                (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE)) {
+            if (event.type == SDL_EVENT_QUIT ||
+                (event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_ESCAPE)) {
                 running = false;
             }
         }
@@ -465,24 +472,31 @@ int roulette_run(RouletteContext *ctx, WallpaperList *wallpapers) {
 
 void roulette_cleanup(RouletteContext *ctx) {
     if (!ctx) return;
-    
+
 #ifdef HAVE_SDL_MIXER
+    if (ctx->tick_track) {
+        MIX_DestroyTrack(ctx->tick_track);
+    }
+    if (ctx->select_track) {
+        MIX_DestroyTrack(ctx->select_track);
+    }
     if (ctx->tick_sound) {
         roulette_sound_free(ctx->tick_sound);
     }
     if (ctx->select_sound) {
         roulette_sound_free(ctx->select_sound);
     }
-    
-    Mix_CloseAudio();
+    if (ctx->mixer) {
+        MIX_DestroyMixer(ctx->mixer);
+    }
 #endif
-    
+
     if (ctx->renderer) {
         SDL_DestroyRenderer(ctx->renderer);
     }
     if (ctx->window) {
         SDL_DestroyWindow(ctx->window);
     }
-    
+
     free(ctx);
 }

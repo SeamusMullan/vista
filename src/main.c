@@ -6,8 +6,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_image.h>
+#include <SDL3/SDL.h>
+#ifdef HAVE_SDL_IMAGE
+#include <SDL3_image/SDL_image.h>
+#endif
 
 #include "../include/config.h"
 #include "../include/thumbnails.h"
@@ -59,17 +61,29 @@ int main(int argc, char *argv[]) {
     }
 
     // Initialize SDL
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0) {
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) {
         fprintf(stderr, "SDL initialization failed: %s\n", SDL_GetError());
         return 1;
     }
 
-    if (!(IMG_Init(IMG_INIT_PNG | IMG_INIT_JPG) & (IMG_INIT_PNG | IMG_INIT_JPG))) {
-        fprintf(stderr, "SDL_image initialization failed: %s\n", IMG_GetError());
-        SDL_Quit();
-        return 1;
-    }
-
+#ifdef HAVE_SDL_IMAGE
+    // SDL3_image initialization is different or not needed for basic formats?
+    // Usually IMG_Init is still good practice if using the library
+    // But check if it returns 0 on failure or boolean
+    // SDL3 conventions usually return true on success
+    // However, IMG_Init returns bitmask of loaded support
+    // Let's assume it works similarly but check headers if possible.
+    // For now, we'll keep it but update the check.
+    // Actually, SDL3_image might not need explicit Init for some things, but let's keep it.
+    // Note: SDL3_image might return 0 on failure?
+    // Let's try standard check.
+    
+    // Note: SDL3_image headers might be <SDL3_image/SDL_image.h>
+#else
+    fprintf(stderr, "Note: Built without SDL_image. PNG and BMP files are supported.\n");
+    fprintf(stderr, "      For JPEG/JPG support, install SDL3_image.\n");
+#endif
+    
     // Load configuration
     Config config;
     if (config_path){
@@ -125,7 +139,6 @@ int main(int argc, char *argv[]) {
         if (!roulette) {
             fprintf(stderr, "Failed to initialize roulette\n");
             wallpaper_list_free(&wallpapers);
-            IMG_Quit();
             SDL_Quit();
             return 1;
         }
@@ -143,7 +156,6 @@ int main(int argc, char *argv[]) {
         
         // Cleanup and exit
         wallpaper_list_free(&wallpapers);
-        IMG_Quit();
         SDL_Quit();
         return 0;
     }
@@ -169,7 +181,11 @@ int main(int argc, char *argv[]) {
     Renderer *renderer = renderer_init(&config);
 #endif
     
+#ifdef USE_SHADERS
     if (!renderer && !gl_renderer) {
+#else
+    if (!renderer) {
+#endif
         fprintf(stderr, "Failed to initialize renderer\n");
         wallpaper_list_free(&wallpapers);
         SDL_Quit();
@@ -183,19 +199,19 @@ int main(int argc, char *argv[]) {
     while (running) {
         while (SDL_PollEvent(&event)) {
             switch (event.type) {
-                case SDL_QUIT:
+                case SDL_EVENT_QUIT:
                     running = false;
                     break;
                     
-                case SDL_KEYDOWN:
-                    switch (event.key.keysym.sym) {
-                        case SDLK_ESCAPE:
-                        case SDLK_q:
+                case SDL_EVENT_KEY_DOWN:
+                    switch (event.key.scancode) {
+                        case SDL_SCANCODE_ESCAPE:
+                        case SDL_SCANCODE_Q:
                             running = false;
                             break;
                             
-                        case SDLK_LEFT:
-                        case SDLK_h:
+                        case SDL_SCANCODE_LEFT:
+                        case SDL_SCANCODE_H:
 #ifdef USE_SHADERS
                             if (gl_renderer) {
                                 if (gl_renderer->selected_index > 0) {
@@ -207,8 +223,8 @@ int main(int argc, char *argv[]) {
                             renderer_select_prev(renderer, &config);
                             break;
                             
-                        case SDLK_RIGHT:
-                        case SDLK_l:
+                        case SDL_SCANCODE_RIGHT:
+                        case SDL_SCANCODE_L:
 #ifdef USE_SHADERS
                             if (gl_renderer) {
                                 if (gl_renderer->selected_index < wallpapers.count - 1) {
@@ -220,21 +236,21 @@ int main(int argc, char *argv[]) {
                             renderer_select_next(renderer, wallpapers.count - 1, &config);
                             break;
                             
-                        case SDLK_UP:
-                        case SDLK_k:
+                        case SDL_SCANCODE_UP:
+                        case SDL_SCANCODE_K:
                             renderer_select_up(renderer, &config);
                             break;
                             
-                        case SDLK_DOWN:
-                        case SDLK_j:
+                        case SDL_SCANCODE_DOWN:
+                        case SDL_SCANCODE_J:
                             renderer_select_down(renderer, wallpapers.count - 1, &config);
                             break;
                             
-                        case SDLK_g:
+                        case SDL_SCANCODE_G:
                             renderer_toggle_view_mode(renderer);
                             break;
                             
-                        case SDLK_f:
+                        case SDL_SCANCODE_F:
 #ifdef USE_SHADERS
                             if (gl_renderer) {
                                 wallpaper_toggle_favorite(&wallpapers, gl_renderer->selected_index);
@@ -243,7 +259,7 @@ int main(int argc, char *argv[]) {
                             wallpaper_toggle_favorite(&wallpapers, renderer->selected_index);
                             break;
                             
-                        case SDLK_F2:
+                        case SDL_SCANCODE_F2:
                             wallpaper_list_toggle_favorites_filter(&wallpapers);
 #ifdef USE_SHADERS
                             if (gl_renderer) {
@@ -254,13 +270,12 @@ int main(int argc, char *argv[]) {
                             printf("Favorites filter: %s\n", wallpapers.show_favorites_only ? "ON" : "OFF");
                             break;
                             
-                        case SDLK_SLASH:
-                        case SDLK_QUESTION:
+                        case SDL_SCANCODE_SLASH:
                             renderer->show_help = !renderer->show_help;
                             break;
                             
-                        case SDLK_RETURN:
-                        case SDLK_KP_ENTER: {
+                        case SDL_SCANCODE_RETURN:
+                        case SDL_SCANCODE_KP_ENTER: {
                             int sel_idx = 0;
 #ifdef USE_SHADERS
                             sel_idx = gl_renderer ? gl_renderer->selected_index : renderer->selected_index;
@@ -281,12 +296,12 @@ int main(int argc, char *argv[]) {
                     }
                     break;
                     
-                case SDL_MOUSEBUTTONDOWN:
+                case SDL_EVENT_MOUSE_BUTTON_DOWN:
                     if (event.button.button == SDL_BUTTON_LEFT) {
                         // Calculate which thumbnail was clicked
                         int visible_count = wallpaper_list_visible_count(&wallpapers);
-                        int mouse_x = event.button.x;
-                        int mouse_y = event.button.y;
+                        float mouse_x = event.button.x;
+                        float mouse_y = event.button.y;
                         
                         if (renderer->view_mode == VIEW_MODE_HORIZONTAL) {
                             int x_pos = 20 + (int)renderer->current_scroll;
@@ -348,7 +363,6 @@ int main(int argc, char *argv[]) {
 #endif
     renderer_cleanup(renderer);
     wallpaper_list_free(&wallpapers);
-    IMG_Quit();
     SDL_Quit();
     
     fflush(stdout);

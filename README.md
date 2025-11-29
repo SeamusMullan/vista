@@ -28,40 +28,65 @@ A fast, keyboard-driven wallpaper switcher for Linux with smooth animations, fav
 
 ## Installation
 
-### Dependencies
+### Quick Build (Recommended)
 
-= pkgconf (aka pkg-config) for CMake dependencies
-- SDL2
-- SDL2_image
-- OpenSSL / MD5
-- OpenGL and GLEW (optional, for shader support)
-
-On MacOS
-
-`brew install pkgconf SDL2 SDL2_image SDL2_ttf`
-
-### Build
+Vista includes SDL3 and its companion libraries as git submodules, so you don't need to install them separately!
 
 ```bash
-./build.sh
-```
-
-Or manually:
-
-```bash
-mkdir -p build
+git clone --recursive https://github.com/yourusername/vista.git
+cd vista
+mkdir build
 cd build
 cmake ..
+make -j$(nproc)
+```
+
+The binary will be at `build/vista`.
+
+**See [BUILD.md](BUILD.md) for detailed build instructions and options.**
+
+### Dependencies
+
+Only minimal dependencies are required:
+
+- **CMake** 3.10 or later
+- **C compiler** (GCC or Clang)
+- **OpenSSL** development libraries
+- **Git**
+
+SDL3, SDL3_image, SDL3_mixer, and SDL3_ttf are included as submodules and built automatically.
+
+#### Installing dependencies:
+
+**Arch Linux:**
+```bash
+sudo pacman -S cmake gcc git openssl
+```
+
+**Ubuntu/Debian:**
+```bash
+sudo apt install cmake build-essential git libssl-dev
+```
+
+**macOS:**
+```bash
+brew install cmake openssl git
+```
+
+### Optional: OpenGL Shader Support
+
+For experimental hardware-accelerated rendering:
+
+```bash
+cmake -DUSE_SHADERS=ON ..
 make
 ```
 
-### Build with OpenGL Shaders
+Requires: OpenGL and GLEW development libraries
+
+### Installation
 
 ```bash
-mkdir -p build
-cd build
-cmake -DUSE_SHADERS=ON ..
-make
 sudo make install
 ```
 

@@ -6,7 +6,7 @@
 #ifndef THUMBNAILS_H
 #define THUMBNAILS_H
 
-#include <SDL2/SDL.h>
+#include <SDL3/SDL.h>
 #include "config.h"
 
 /**
