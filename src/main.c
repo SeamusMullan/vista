@@ -85,27 +85,9 @@ int main(int argc, char *argv[]) {
 #endif
     
     // Load configuration
-    Config config;
-    if (config_path){
-        config = config_path ? config_parse(config_path) : config_default();
-    } else {
-        // Check if default config file exists
-        const char *home = getenv("HOME");
-        if (home) {
-            char default_config_path[1024];
-            snprintf(default_config_path, sizeof(default_config_path), "%s/.config/vista/vista.conf", home);
-            
-            FILE *f = fopen(default_config_path, "r");
-            if (f) {
-                fclose(f);
-                config = config_parse(default_config_path);
-            } else {
-                config = config_default();
-            }
-        } else {
-            config = config_default();
-        }
-    } 
+    // config_parse() will automatically check XDG_CONFIG_HOME/vista/vista.conf
+    // or ~/.config/vista/vista.conf when path is NULL
+    Config config = config_parse(config_path); 
     
     // Scan wallpapers from all configured directories
     printf("Scanning wallpapers in: %s\n", config.wallpaper_dir);

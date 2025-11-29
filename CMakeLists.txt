@@ -23,10 +23,15 @@ elseif(WIN32)
     # Windows: pkg-config or find_package handles this
 endif()
 
-# RPATH handling (portable)
-set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+# RPATH handling - FIXED for proper library resolution
 set(CMAKE_SKIP_BUILD_RPATH FALSE)
 set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+
+# Set RPATH to look for libraries in ../lib relative to the binary
+# This works for both $HOME/.local and /usr/local installations
+list(APPEND CMAKE_INSTALL_RPATH "$ORIGIN/../lib")
+list(APPEND CMAKE_INSTALL_RPATH "$ORIGIN")
 
 # Options
 option(USE_SHADERS "Enable OpenGL shader support" OFF)
@@ -194,9 +199,41 @@ if(USE_SHADERS)
 endif()
 
 # Install rules
-install(TARGETS vista DESTINATION bin)
-install(FILES config/vista.conf.example DESTINATION share/vista)
-install(DIRECTORY shaders DESTINATION share/vista)
+include(GNUInstallDirs)
+
+install(TARGETS vista DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES config/vista.conf.example DESTINATION ${CMAKE_INSTALL_DATADIR}/vista)
+install(DIRECTORY shaders DESTINATION ${CMAKE_INSTALL_DATADIR}/vista)
+
+# FIXED: Install SDL3 shared libraries when building from submodules
+if(NOT USE_SYSTEM_SDL)
+    # Install all SDL3 shared libraries to lib directory
+    install(TARGETS SDL3-shared
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}  # For Windows DLLs
+    )
+    
+    if(SDL3_IMAGE_FOUND)
+        install(TARGETS SDL3_image-shared
+            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        )
+    endif()
+    
+    if(SDL3_MIXER_FOUND)
+        install(TARGETS SDL3_mixer-shared
+            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        )
+    endif()
+    
+    if(SDL3_TTF_FOUND)
+        install(TARGETS SDL3_ttf-shared
+            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        )
+    endif()
+endif()
 
 # Documentation
 if(BUILD_DOCS)
@@ -215,4 +252,3 @@ add_custom_target(uninstall
     COMMAND xargs rm -f < install_manifest.txt
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
-
