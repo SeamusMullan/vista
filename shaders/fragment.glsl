@@ -78,51 +78,43 @@ vec3 glassSpecular(vec2 uv, vec2 center) {
 
 void main() {
     // ======================
-    // BACKGROUND RENDERING (Frosted Glass)
+    // BACKGROUND RENDERING (Transparent with subtle tint)
     // ======================
     if (isBackground > 0.5) {
-        // Apply blur to the background texture
-        vec4 blur1 = frostBlur(texture1, TexCoord, 1.5);
-        vec4 blur2 = frostBlur(texture1, TexCoord, 4.0);
-        vec4 blurredBG = mix(blur1, blur2, 0.5);
+        // TRANSPARENT BACKGROUND - let the desktop show through!
+        // We just add a subtle tinted overlay with rounded corners
         
-        // Windows Aero blue-tinted glass
-        vec3 aeroTint = vec3(0.88, 0.93, 0.98);
-        vec3 tintedGlass = blurredBG.rgb * aeroTint;
-        
-        // Add subtle color shift based on position
         vec2 ndc = (WindowPos - windowSize * 0.5) / (windowSize * 0.5);
-        float gradientShift = length(ndc) * 0.12;
-        tintedGlass = mix(tintedGlass, tintedGlass * vec3(0.92, 0.96, 1.0), gradientShift);
         
-        // FIXED: Proper rounded window corners with smooth anti-aliasing
+        // Rounded window corners
         vec2 windowCenter = windowSize * 0.5;
         vec2 windowHalfSize = windowSize * 0.5;
         float windowDist = roundedBoxSDF(WindowPos, windowCenter, windowHalfSize, cornerRadius);
         
-        // Smooth edge with proper anti-aliasing
-        float edgeWidth = 1.5; // pixels for anti-aliasing
+        // Smooth edge with anti-aliasing
+        float edgeWidth = 1.5;
         float windowAlpha = 1.0 - smoothstep(-edgeWidth, edgeWidth, windowDist);
         
-        // Glass specular highlights
-        vec3 specular = glassSpecular(WindowPos / windowSize, vec2(0.5, 0.3));
+        // Subtle dark tint so thumbnails are visible against any background
+        // Adjust these values to taste:
+        //   - vec3 controls the tint color (darker = more contrast)
+        //   - the alpha (0.3) controls how transparent (lower = more see-through)
+        vec3 tintColor = vec3(0.08, 0.08, 0.12); // Dark blue-ish tint
+        float tintAlpha = 0.4; // 40% opacity - adjust this!
         
-        // Subtle vignette
-        float radial = length(ndc);
-        float vignette = 1.0 - smoothstep(0.7, 1.3, radial);
-        vec3 vignetted = tintedGlass * (0.88 + vignette * 0.12);
+        // Optional: slight gradient for depth
+        float gradient = 1.0 - length(ndc) * 0.15;
+        tintColor *= gradient;
         
-        // Film grain (subtle)
-        float grain = (hash(WindowPos + time * 100.0) - 0.5) * 0.018;
+        // Optional: subtle vignette darkening at edges
+        float vignette = smoothstep(0.5, 1.2, length(ndc));
+        tintAlpha += vignette * 0.15;
         
-        // Combine effects
-        vec3 finalColor = vignetted + specular + grain;
+        // Film grain for texture (very subtle)
+        float grain = (hash(WindowPos + time * 100.0) - 0.5) * 0.02;
+        tintColor += grain;
         
-        // Semi-transparent frosted glass
-        // This creates the "frosted" look over whatever is behind
-        float glassAlpha = 0.85 * windowAlpha;
-        
-        FragColor = vec4(clamp(finalColor, 0.0, 1.0), glassAlpha);
+        FragColor = vec4(clamp(tintColor, 0.0, 1.0), tintAlpha * windowAlpha);
         return;
     }
     

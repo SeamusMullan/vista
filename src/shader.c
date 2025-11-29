@@ -84,14 +84,8 @@ GLRenderer* gl_renderer_init(const Config *config) {
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
     
-    // Create window with transparency support
-    // NOTE: SDL_WINDOW_TRANSPARENT is needed for true compositor transparency
-    Uint32 window_flags = SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS;
-    
-    // Try to enable transparency if available (SDL3 feature)
-    #ifdef SDL_WINDOW_TRANSPARENT
-    window_flags |= SDL_WINDOW_TRANSPARENT;
-    #endif
+    // Create window with TRUE compositor transparency
+    Uint32 window_flags = SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS | SDL_WINDOW_TRANSPARENT;
     
     r->window = SDL_CreateWindow(
         "vista - wallpaper switcher (OpenGL)",
@@ -99,6 +93,18 @@ GLRenderer* gl_renderer_init(const Config *config) {
         config->window_height,
         window_flags
     );
+    
+    if (!r->window) {
+        // Fallback without transparency if not supported
+        fprintf(stderr, "Transparent window failed, trying without: %s\n", SDL_GetError());
+        window_flags = SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS;
+        r->window = SDL_CreateWindow(
+            "vista - wallpaper switcher (OpenGL)",
+            config->window_width,
+            config->window_height,
+            window_flags
+        );
+    }
     
     if (!r->window) {
         fprintf(stderr, "Failed to create window: %s\n", SDL_GetError());
