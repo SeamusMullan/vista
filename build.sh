@@ -73,5 +73,9 @@ cmake --build . -j$(nproc --all)
 echo ""
 echo "Build complete! Binary: ./build/vista"
 echo ""
+echo "Installing shaders to /usr/share/vista/shaders..."
+sudo mkdir -p /usr/share/vista/shaders
+sudo install -Dm644 ../shaders/vertex.glsl /usr/share/vista/shaders/vertex.glsl
+sudo install -Dm644 ../shaders/fragment.glsl /usr/share/vista/shaders/fragment.glsl
 echo "To run from build directory:"
 echo "  ./build/vista"

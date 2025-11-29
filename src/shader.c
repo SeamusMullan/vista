@@ -14,18 +14,21 @@ static Uint64 start_time = 0;
 static char* read_file(const char *path) {
     FILE *f = fopen(path, "rb");
     if (!f) {
-        fprintf(stderr, "Failed to open shader file: %s\n", path);
-        return NULL;
+        // Try system-wide shader directory
+        char sys_path[512];
+        snprintf(sys_path, sizeof(sys_path), "/usr/share/vista/shaders/%s", strrchr(path, '/') ? strrchr(path, '/') + 1 : path);
+        f = fopen(sys_path, "rb");
+        if (!f) {
+            fprintf(stderr, "Failed to open shader file: %s or %s\n", path, sys_path);
+            return NULL;
+        }
     }
-    
     fseek(f, 0, SEEK_END);
     long size = ftell(f);
     fseek(f, 0, SEEK_SET);
-    
     char *buffer = malloc(size + 1);
     fread(buffer, 1, size, f);
     buffer[size] = '\0';
-    
     fclose(f);
     return buffer;
 }

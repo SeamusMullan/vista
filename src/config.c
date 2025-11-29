@@ -96,17 +96,42 @@ Config config_parse(const char *path)
 {
     Config config = config_default();
 
-    // If no path provided, use XDG config location
+    // If no path provided, try both XDG config and legacy config
     char xdg_path[512];
+    char legacy_path[512];
+    FILE *f = NULL;
     if (!path)
     {
         get_xdg_config_path(xdg_path, sizeof(xdg_path));
-        path = xdg_path;
+        // Also check ~/.config/vista/config (legacy)
+        snprintf(legacy_path, sizeof(legacy_path), "%s/.config/vista/config", get_home_dir());
+
+        // Try XDG config first
+        f = fopen(xdg_path, "r");
+        if (!f)
+        {
+            // Try legacy config
+            f = fopen(legacy_path, "r");
+            if (f)
+                path = legacy_path;
+            else
+                path = xdg_path; // For error message
+        }
+        else
+        {
+            path = xdg_path;
+        }
+    }
+    else
+    {
+        f = fopen(path, "r");
     }
 
-    FILE *f = fopen(path, "r");
     if (!f)
+    {
+        fprintf(stderr, "Warning: Could not open config file %s, using defaults\n", path);
         return config; // Silent fail (default config)
+    }
 
     char line[512];
     while (fgets(line, sizeof(line), f))
