@@ -2,6 +2,11 @@
 
 A fast, keyboard-driven wallpaper switcher for Linux with smooth animations, favorites, and OpenGL shader support.
 
+
+https://github.com/user-attachments/assets/0874e86c-f6e2-4d63-ac55-0971fc397c5c
+
+> song is No Mana- Lost Call, wallpapers from desktopgeneration.com
+
 ## Features
 
 **Thumbnail Caching** - MD5-based caching system for fast loading  
