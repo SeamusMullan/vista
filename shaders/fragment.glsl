@@ -3,6 +3,8 @@
 in vec2 TexCoord;
 in vec2 FragPos;
 in vec2 WindowPos;
+in vec3 WorldPos3D;
+in float Depth;
 
 out vec4 FragColor;
 
@@ -11,152 +13,221 @@ uniform sampler2D backgroundTexture;
 uniform float selected;
 uniform float time;
 uniform vec2 windowSize;
-uniform vec2 thumbnailPos;  // Position of thumbnail in screen space
-uniform vec2 thumbnailSize; // Size of thumbnail
-uniform float cornerRadius; // Radius for rounded corners
-uniform float isBackground;  // 1.0 if rendering background, 0.0 for thumbnails
-uniform vec3 avgColor;      // Average color from thumbnail for glow
-uniform float blurStrength; // Strength of background blur
+uniform vec2 thumbnailPos;
+uniform vec2 thumbnailSize;
+uniform float cornerRadius;
+uniform float isBackground;
+uniform vec3 avgColor;
+uniform float rotationY;
 
-// Pseudo random hash for subtle film grain
+// ====================
+// WINDOWS AERO FROSTED GLASS SHADER
+// ====================
+
+// Hash function for noise/grain
 float hash(vec2 p) {
     p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
     return fract(sin(p.x + p.y) * 43758.5453);
 }
 
-// Proper separable Gaussian blur for glass-like softness
-vec4 sampleGlassBlur(sampler2D tex, vec2 uv, float radius) {
-    if (radius <= 0.001) {
-        return texture(tex, uv);
+// High-quality multi-pass Gaussian blur for frosted glass
+vec4 frostBlur(sampler2D tex, vec2 uv, float radius) {
+    vec2 texel = 1.0 / windowSize;
+    vec4 result = vec4(0.0);
+    float totalWeight = 0.0;
+
+    // Larger kernel for more pronounced blur
+    const int samples = 12;
+    const float sigma = 4.5;
+
+    for (int x = -samples; x <= samples; x++) {
+        for (int y = -samples; y <= samples; y++) {
+            vec2 offset = vec2(float(x), float(y)) * texel * radius;
+            vec2 sampleUV = clamp(uv + offset, 0.0, 1.0);
+
+            // Gaussian weight
+            float dist = length(vec2(x, y));
+            float weight = exp(-(dist * dist) / (2.0 * sigma * sigma));
+
+            result += texture(tex, sampleUV) * weight;
+            totalWeight += weight;
+        }
     }
-    
+
+    return result / totalWeight;
+}
+
+// Lighter, faster blur for subtle effects
+vec4 softBlur(sampler2D tex, vec2 uv, float radius) {
     vec2 texel = radius / windowSize;
-    vec4 accum = vec4(0.0);
-    float weightAccum = 0.0;
-    
-    // Gaussian weights for 7-tap kernel (sigma ≈ 2.0)
-    // Pre-calculated for performance
-    const float weights[7] = float[7](
-        0.0702, 0.1311, 0.1907, 0.2161, 0.1907, 0.1311, 0.0702
-    );
-    
-    // Two-pass separable Gaussian blur
-    // Horizontal pass
-    vec4 horizontalBlur = vec4(0.0);
-    for (int i = 0; i < 7; ++i) {
-        float offset = float(i - 3);
-        vec2 sampleUV = clamp(uv + vec2(texel.x * offset, 0.0), 0.0, 1.0);
-        horizontalBlur += texture(tex, sampleUV) * weights[i];
+    vec4 result = vec4(0.0);
+
+    const float weights[5] = float[5](0.227027, 0.1945946, 0.1216216, 0.054054, 0.016216);
+
+    result += texture(tex, uv) * weights[0];
+
+    for (int i = 1; i < 5; i++) {
+        vec2 off = texel * float(i);
+        result += texture(tex, uv + vec2(off.x, 0.0)) * weights[i];
+        result += texture(tex, uv - vec2(off.x, 0.0)) * weights[i];
+        result += texture(tex, uv + vec2(0.0, off.y)) * weights[i];
+        result += texture(tex, uv - vec2(0.0, off.y)) * weights[i];
     }
-    
-    // Vertical pass (simulated by sampling diagonal and vertical)
-    for (int i = 0; i < 7; ++i) {
-        float offset = float(i - 3);
-        vec2 sampleUV = clamp(uv + vec2(0.0, texel.y * offset), 0.0, 1.0);
-        accum += texture(tex, sampleUV) * weights[i];
-    }
-    
-    // Blend horizontal and vertical for approximate 2D Gaussian
-    return (horizontalBlur + accum) * 0.5;
+
+    return result;
 }
 
-// Extract dominant color from texture (simplified approach)
-vec3 extractDominantColor(sampler2D tex, vec2 uv) {
-    // Sample at multiple points and average
-    vec3 color = vec3(0.0);
-    int samples = 16;
-    
-    for (int i = 0; i < samples; i++) {
-        float angle = float(i) * 6.28318 / float(samples);
-        vec2 offset = vec2(cos(angle), sin(angle)) * 0.3;
-        vec2 sampleUV = clamp(uv + offset, 0.0, 1.0);
-        color += texture(tex, sampleUV).rgb;
-    }
-    
-    // Add center sample with more weight
-    color += texture(tex, uv).rgb * 4.0;
-    
-    return color / float(samples + 4);
-}
-
-// Distance to rounded rectangle
-float roundedRectDistance(vec2 pos, vec2 center, vec2 size, float radius) {
+// Rounded rectangle distance field
+float roundedBoxSDF(vec2 pos, vec2 center, vec2 size, float radius) {
     vec2 d = abs(pos - center) - size * 0.5 + radius;
     return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0) - radius;
 }
 
+// Enhanced specular highlights for glass reflection
+vec3 glassSpecular(vec2 uv, vec2 center) {
+    vec2 toCenter = normalize(center - uv);
+    float fresnel = pow(1.0 - abs(dot(toCenter, vec2(0.0, 1.0))), 3.0);
+
+    // Animated light sweep
+    float sweep = sin(time * 0.3 + uv.x * 2.0) * 0.5 + 0.5;
+
+    vec3 highlight = vec3(0.9, 0.95, 1.0) * fresnel * 0.15;
+    highlight += vec3(0.7, 0.8, 1.0) * sweep * 0.08;
+
+    return highlight;
+}
+
 void main() {
-    vec4 texColor = texture(texture1, TexCoord);
-    
-    // For background rendering
+    // ======================
+    // BACKGROUND RENDERING (Frosted Glass)
+    // ======================
     if (isBackground > 0.5) {
-        // Apply multi-axis blur to background for frosted-glass look
-        vec4 blurredColor = sampleGlassBlur(texture1, TexCoord, 15.5);
+        // Multi-layer blur for authentic frosted glass
+        vec4 blur1 = frostBlur(texture1, TexCoord, 1.2);
+        vec4 blur2 = softBlur(texture1, TexCoord, 8.0);
+        vec4 blurredBG = mix(blur1, blur2, 0.6);
 
-        // Apply rounded corners to window
+        // Windows Aero blue-tinted glass
+        vec3 aeroTint = vec3(0.85, 0.92, 0.98);
+        vec3 tintedGlass = blurredBG.rgb * aeroTint;
+
+        // Add subtle color shift based on position
+        vec2 ndc = (WindowPos - windowSize * 0.5) / (windowSize * 0.5);
+        float gradientShift = length(ndc) * 0.15;
+        tintedGlass = mix(tintedGlass, tintedGlass * vec3(0.9, 0.95, 1.0), gradientShift);
+
+        // Rounded window corners
         vec2 windowCenter = windowSize * 0.5;
-        float dist = roundedRectDistance(WindowPos, windowCenter, windowSize, cornerRadius);
-        
-        // Calculate the magnitude of the distance field's change across one pixel.
-        // Multiply by a small factor (like 1.5) to widen the blur slightly for a softer edge.
-        float aa_width = fwidth(dist) * 1.5; 
-        
-        // Use the derivative (aa_width) to define the smoothstep range.
-        // This ensures the transition from opaque to transparent is exactly one pixel wide.
-        float alpha = 1.0 - smoothstep(-aa_width, aa_width, dist);
+        float windowDist = roundedBoxSDF(WindowPos, windowCenter, windowSize, cornerRadius);
+        float windowAlpha = 1.0 - smoothstep(-2.0, 2.0, windowDist);
 
-        // Subtle tint keeps the glass cohesive even with busy wallpapers
-        vec3 glassTint = vec3(0.12, 0.14, 0.18);
-        vec3 tinted = mix(blurredColor.rgb, glassTint + blurredColor.rgb * 0.75, 0.35);
+        // Glass specular highlights
+        vec3 specular = glassSpecular(WindowPos / windowSize, vec2(0.5, 0.3));
 
-        // Soft vignette and highlight for depth
-        vec2 ndc = (WindowPos - windowCenter) / windowCenter;
-        float radial = clamp(dot(ndc, ndc), 0.0, 2.0);
-        float vignette = 1.0 - smoothstep(0.72, 0.98, radial);
-        float highlight = pow(clamp(1.0 - radial, 0.0, 1.0), 3.0) * 0.22;
-        vec3 lighting = mix(tinted * 0.9, tinted, vignette) + vec3(0.32, 0.34, 0.42) * highlight;
+        // Vignette for depth
+        float radial = length(ndc);
+        float vignette = 1.0 - smoothstep(0.6, 1.2, radial);
+        vec3 vignetted = tintedGlass * (0.85 + vignette * 0.15);
 
-        // Time varying grain breaks banding and sells the material
-        float grain = (hash(WindowPos * 0.75 + time * 0.5) - 0.5) * 0.02;
-        lighting += grain;
+        // Film grain for texture
+        float grain = (hash(WindowPos + time * 100.0) - 0.5) * 0.025;
 
-        FragColor = vec4(clamp(lighting, 0.0, 1.0), alpha * 0.82);
+        // Combine all effects
+        vec3 finalColor = vignetted + specular + grain;
+
+        // Aero-style transparency (slightly opaque frosted glass)
+        float glassAlpha = 0.75 * windowAlpha;
+
+        FragColor = vec4(clamp(finalColor, 0.0, 1.0), glassAlpha);
         return;
     }
-    
-    // For thumbnail rendering
+
+    // ======================
+    // THUMBNAIL RENDERING (3D Gallery Items)
+    // ======================
+
+    vec4 texColor = texture(texture1, TexCoord);
+
+    // Calculate rounded corners for thumbnail
     vec2 thumbnailCenter = thumbnailPos + thumbnailSize * 0.5;
-    float thumbnailDist = roundedRectDistance(FragPos, thumbnailCenter, thumbnailSize, cornerRadius * 0.5);
-    
-    // Apply rounded corners to thumbnail
-    float thumbnailAlpha = 1.0 - smoothstep(-1.0, 1.0, thumbnailDist);
-    texColor.a *= thumbnailAlpha;
-    
-    // Colored blur halo around every thumbnail, intensified when selected
+    float thumbDist = roundedBoxSDF(FragPos, thumbnailCenter, thumbnailSize, cornerRadius);
+
+    // Smooth anti-aliased edges
+    float edgeSoftness = fwidth(thumbDist) * 1.5;
+    float thumbAlpha = 1.0 - smoothstep(-edgeSoftness, edgeSoftness, thumbDist);
+
+    // Apply rounded corners to image
+    texColor.a *= thumbAlpha;
+
+    // ======================
+    // GLOWING OUTLINE EFFECT
+    // ======================
+
     vec3 glowColor = avgColor;
-    if (length(glowColor) < 0.1) {
-        glowColor = extractDominantColor(texture1, vec2(0.5, 0.5));
+    // Boost saturation for vibrant glow
+    float luminance = dot(glowColor, vec3(0.299, 0.587, 0.114));
+    glowColor = mix(vec3(luminance), glowColor, 1.8);
+    glowColor = clamp(glowColor, 0.0, 1.0);
+
+    // Glow parameters
+    float glowRadius = mix(35.0, 55.0, selected);
+    float glowIntensity = mix(0.6, 1.0, selected);
+
+    // Pulsing animation
+    float pulse = 0.7 + 0.3 * sin(time * 2.0 + dot(glowColor, vec3(1.0)));
+
+    // Distance-based glow falloff
+    float distToEdge = max(thumbDist, 0.0);
+    float glow = exp(-pow(distToEdge / glowRadius, 1.3)) * glowIntensity * pulse;
+
+    // Outer glow ring (more pronounced)
+    if (thumbDist > 0.0 && thumbDist < glowRadius) {
+        vec3 outerGlow = glowColor * glow * 1.2;
+        texColor.rgb += outerGlow;
+        texColor.a = max(texColor.a, glow * 0.7);
     }
 
-    float glowRadius = mix(28.0, 44.0, selected);
-    float haloDist = max(thumbnailDist, 0.0);
-    float haloIntensity = exp(-pow(haloDist / max(glowRadius, 0.001), 1.25));
-    float pulse = 0.55 + 0.35 * sin(time * 2.4 + dot(glowColor, vec3(2.1, 1.3, 3.7)));
-    float haloBoost = mix(0.45, 0.95, selected) * pulse;
-
-    vec3 saturatedGlow = clamp(mix(vec3(dot(glowColor, vec3(0.299, 0.587, 0.114))), glowColor, 1.7), 0.0, 1.0);
-    vec3 halo = saturatedGlow * haloIntensity * haloBoost;
-
-    if (thumbnailDist > -glowRadius) {
-        texColor.rgb += halo;
-        texColor.a = max(texColor.a, haloIntensity * 0.55 * mix(0.6, 1.0, selected));
+    // Inner glow (selected items get extra shimmer)
+    if (thumbDist <= 0.0) {
+        float innerGlow = 0.12 * selected + 0.05;
+        float shimmer = sin(time * 3.0 + FragPos.x * 0.1) * 0.03;
+        texColor.rgb += glowColor * (innerGlow + shimmer);
     }
 
-    // Inner lift keeps the artwork readable while sitting on the glass
-    if (thumbnailDist <= 0.0) {
-        float innerGlow = 0.08 + 0.06 * selected + 0.04 * sin(time * 3.2);
-        texColor.rgb = clamp(texColor.rgb + saturatedGlow * innerGlow, 0.0, 1.0);
+    // ======================
+    // 3D DEPTH & LIGHTING
+    // ======================
+
+    // Subtle shading based on rotation angle
+    float rotationShade = cos(rotationY) * 0.15 + 0.85;
+    texColor.rgb *= rotationShade;
+
+    // Depth-based brightness (items further back are slightly darker)
+    float depthFade = 1.0 - (abs(Depth) * 0.08);
+    texColor.rgb *= depthFade;
+
+    // Edge lighting (rim light effect)
+    vec2 edgeNormal = normalize(FragPos - thumbnailCenter);
+    float rimLight = pow(1.0 - thumbAlpha, 3.0) * 0.3;
+    texColor.rgb += glowColor * rimLight;
+
+    // ======================
+    // REFLECTION/SPECULAR
+    // ======================
+
+    // Add subtle glass-like reflection on the image surface
+    vec2 reflectUV = TexCoord;
+    float reflectiveness = 0.08;
+    vec3 reflection = vec3(0.9, 0.95, 1.0) * reflectiveness;
+
+    // Animated light sweep across selected item
+    if (selected > 0.5) {
+        float sweepPos = fract(time * 0.4);
+        float sweep = exp(-pow((TexCoord.x - sweepPos) * 3.0, 2.0));
+        texColor.rgb += vec3(1.0, 1.0, 1.0) * sweep * 0.25;
     }
-    
+
+    texColor.rgb += reflection * (0.5 + 0.5 * sin(time * 0.5));
+
     FragColor = texColor;
 }

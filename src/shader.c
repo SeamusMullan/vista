@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include <SDL3/SDL.h>
 
 static char* read_file(const char *path) {
@@ -103,7 +104,7 @@ GLRenderer* gl_renderer_init(const Config *config) {
     glewExperimental = GL_TRUE;
     if (glewInit() != GLEW_OK) {
         fprintf(stderr, "Failed to initialize GLEW\n");
-        SDL_GL_DeleteContext(r->gl_context);
+        SDL_GL_DestroyContext(r->gl_context);
         SDL_DestroyWindow(r->window);
         free(r);
         return NULL;
@@ -115,7 +116,7 @@ GLRenderer* gl_renderer_init(const Config *config) {
     
     if (!vertex_shader || !fragment_shader) {
         fprintf(stderr, "Failed to load shaders\n");
-        SDL_GL_DeleteContext(r->gl_context);
+        SDL_GL_DestroyContext(r->gl_context);
         SDL_DestroyWindow(r->window);
         free(r);
         return NULL;
@@ -185,22 +186,22 @@ static void calculate_avg_color(SDL_Surface *surf, float *r, float *g, float *b)
     int step = 4; // Sample every 4th pixel for performance
     
     SDL_LockSurface(surf);
-    
-    const SDL_PixelFormatDetails *details = SDL_GetPixelFormatDetails(surf->format);
-    
+
+    const SDL_PixelFormatDetails *format_details = SDL_GetPixelFormatDetails(surf->format);
+
     for (int y = 0; y < surf->h; y += step) {
         for (int x = 0; x < surf->w; x += step) {
             Uint32 pixel = ((Uint32*)surf->pixels)[y * (surf->pitch / 4) + x];
             Uint8 pr, pg, pb;
-            SDL_GetRGB(pixel, details, NULL, &pr, &pg, &pb);
-            
+            SDL_GetRGB(pixel, format_details, NULL, &pr, &pg, &pb);
+
             sum_r += pr;
             sum_g += pg;
             sum_b += pb;
             sample_count++;
         }
     }
-    
+
     SDL_UnlockSurface(surf);
     
     if (sample_count > 0) {
@@ -217,22 +218,25 @@ void gl_renderer_draw_frame(GLRenderer *r, const WallpaperList *list, const Conf
     const float smoothness = 0.15f;
     r->current_scroll += (r->target_scroll - r->current_scroll) * smoothness;
     r->current_scroll_y += (r->target_scroll_y - r->current_scroll_y) * smoothness;
-    
+
+    // Disable depth testing - we'll handle Z-ordering manually with render order
+    glDisable(GL_DEPTH_TEST);
+
     // Clear with transparency
     glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
     glClear(GL_COLOR_BUFFER_BIT);
-    
+
     glUseProgram(r->shader_program);
     glBindVertexArray(r->vao);
-    
+
     // Set time uniform for animation
     float time = SDL_GetTicks() / 1000.0f;
     glUniform1f(glGetUniformLocation(r->shader_program, "time"), time);
-    
+
     // Set window size uniform
     float windowSize[2] = {(float)config->window_width, (float)config->window_height};
     glUniform2fv(glGetUniformLocation(r->shader_program, "windowSize"), 1, windowSize);
-    
+
     // Set corner radius and blur strength
     glUniform1f(glGetUniformLocation(r->shader_program, "cornerRadius"), 15.0f);
     glUniform1f(glGetUniformLocation(r->shader_program, "blurStrength"), 8.0f);
@@ -248,7 +252,8 @@ void gl_renderer_draw_frame(GLRenderer *r, const WallpaperList *list, const Conf
         glBindTexture(GL_TEXTURE_2D, bg_texture);
         
         SDL_Surface *surf = selected_wp->thumb;
-        GLenum format = (SDL_BYTESPERPIXEL(surf->format) == 4) ? GL_RGBA : GL_RGB;
+        const SDL_PixelFormatDetails *format_details = SDL_GetPixelFormatDetails(surf->format);
+        GLenum format = (format_details->bytes_per_pixel == 4) ? GL_RGBA : GL_RGB;
         glTexImage2D(GL_TEXTURE_2D, 0, format, surf->w, surf->h, 0, format, GL_UNSIGNED_BYTE, surf->pixels);
         
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -256,9 +261,13 @@ void gl_renderer_draw_frame(GLRenderer *r, const WallpaperList *list, const Conf
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         
-        // Set background rendering mode
+        // Set background rendering mode (disable 3D transforms)
         glUniform1f(glGetUniformLocation(r->shader_program, "isBackground"), 1.0f);
         glUniform1f(glGetUniformLocation(r->shader_program, "selected"), 0.0f);
+        glUniform1f(glGetUniformLocation(r->shader_program, "is3D"), 0.0f);
+        glUniform1f(glGetUniformLocation(r->shader_program, "rotationY"), 0.0f);
+        glUniform1f(glGetUniformLocation(r->shader_program, "tiltX"), 0.0f);
+        glUniform1f(glGetUniformLocation(r->shader_program, "depth3D"), 0.0f);
         
         // Setup transformation matrices for fullscreen quad
         float model[16], projection[16];
@@ -305,51 +314,81 @@ void gl_renderer_draw_frame(GLRenderer *r, const WallpaperList *list, const Conf
         glDeleteTextures(1, &bg_texture);
     }
     
-    // === SECOND PASS: Render thumbnails on top ===
-    
+    // === SECOND PASS: Render thumbnails on top with 3D carousel ===
+
     if (r->view_mode == 0) { // VIEW_MODE_HORIZONTAL
-        int x = 20 + (int)r->current_scroll;
-        int y = (config->window_height - config->thumbnail_height) / 2;
-        int spacing = 20;
-        
+        int center_x = config->window_width / 2;
+        int center_y = config->window_height / 2;
+
+        // Carousel parameters
+        const int spacing = config->thumbnail_width + 30;  // Horizontal spacing between items
+
         for (int i = 0; i < visible_count; i++) {
             Wallpaper *wp = wallpaper_list_get((WallpaperList*)list, i);
             if (wp && wp->thumb) {
+                // Calculate position offset from center
+                int index_offset = i - r->selected_index;
+
+                // Calculate horizontal position
+                int x_offset = index_offset * spacing;
+
+                // Scale based on distance from selection (selected is biggest)
+                float distance = fabsf((float)index_offset);
+                float perspective_scale = 1.0f / (1.0f + distance * 0.15f); // Selected=1.0, -1/+1=0.87, -2/+2=0.77...
+
+                int scaled_width = (int)(config->thumbnail_width * perspective_scale);
+                int scaled_height = (int)(config->thumbnail_height * perspective_scale);
+
+                // Final screen position
+                int x = center_x + x_offset - scaled_width / 2;
+                int y = center_y - scaled_height / 2;
+
+                // Simple rotation angle for shader effects
+                float rotation_y = (float)index_offset * 0.1f;
+
                 // Create OpenGL texture from SDL surface
                 GLuint texture;
                 glGenTextures(1, &texture);
                 glBindTexture(GL_TEXTURE_2D, texture);
-                
+
                 SDL_Surface *surf = wp->thumb;
-                GLenum format = (SDL_BYTESPERPIXEL(surf->format) == 4) ? GL_RGBA : GL_RGB;
+                const SDL_PixelFormatDetails *format_details = SDL_GetPixelFormatDetails(surf->format);
+                GLenum format = (format_details->bytes_per_pixel == 4) ? GL_RGBA : GL_RGB;
                 glTexImage2D(GL_TEXTURE_2D, 0, format, surf->w, surf->h, 0, format, GL_UNSIGNED_BYTE, surf->pixels);
-                
+
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-                
+
                 // Set selected uniform (this enables the shader glow effect!)
                 float selected = (i == r->selected_index) ? 1.0f : 0.0f;
                 glUniform1f(glGetUniformLocation(r->shader_program, "selected"), selected);
-                
+
                 // Set thumbnail-specific uniforms
                 glUniform1f(glGetUniformLocation(r->shader_program, "isBackground"), 0.0f);
-                
+
+                // Disable 3D vertex transformations (we handle positioning in C)
+                // Just pass rotation for shader lighting effects
+                glUniform1f(glGetUniformLocation(r->shader_program, "is3D"), 0.0f);
+                glUniform1f(glGetUniformLocation(r->shader_program, "rotationY"), rotation_y);
+                glUniform1f(glGetUniformLocation(r->shader_program, "tiltX"), 0.0f);
+                glUniform1f(glGetUniformLocation(r->shader_program, "depth3D"), 0.0f);
+
                 float thumbnailPos[2] = {(float)x, (float)y};
-                float thumbnailSize[2] = {(float)config->thumbnail_width, (float)config->thumbnail_height};
+                float thumbnailSize[2] = {(float)scaled_width, (float)scaled_height};
                 glUniform2fv(glGetUniformLocation(r->shader_program, "thumbnailPos"), 1, thumbnailPos);
                 glUniform2fv(glGetUniformLocation(r->shader_program, "thumbnailSize"), 1, thumbnailSize);
-                
+
                 // Calculate and set average color for glow effect
                 float avg_r, avg_g, avg_b;
                 calculate_avg_color(surf, &avg_r, &avg_g, &avg_b);
                 float avgColor[3] = {avg_r, avg_g, avg_b};
                 glUniform3fv(glGetUniformLocation(r->shader_program, "avgColor"), 1, avgColor);
-                
-                // Setup transformation matrices
+
+                // Setup transformation matrices (orthographic, same as background)
                 float model[16], projection[16];
-                
+
                 // Orthographic projection
                 float left = 0.0f, right = (float)config->window_width;
                 float bottom = (float)config->window_height, top = 0.0f;
@@ -357,23 +396,21 @@ void gl_renderer_draw_frame(GLRenderer *r, const WallpaperList *list, const Conf
                 projection[4] = 0; projection[5] = 2.0f / (top - bottom); projection[6] = 0; projection[7] = 0;
                 projection[8] = 0; projection[9] = 0; projection[10] = -1; projection[11] = 0;
                 projection[12] = -(right + left) / (right - left); projection[13] = -(top + bottom) / (top - bottom); projection[14] = 0; projection[15] = 1;
-                
+
                 // Model matrix (position and scale)
-                model[0] = config->thumbnail_width; model[1] = 0; model[2] = 0; model[3] = 0;
-                model[4] = 0; model[5] = config->thumbnail_height; model[6] = 0; model[7] = 0;
+                model[0] = scaled_width; model[1] = 0; model[2] = 0; model[3] = 0;
+                model[4] = 0; model[5] = scaled_height; model[6] = 0; model[7] = 0;
                 model[8] = 0; model[9] = 0; model[10] = 1; model[11] = 0;
                 model[12] = x; model[13] = y; model[14] = 0; model[15] = 1;
-                
+
                 glUniformMatrix4fv(glGetUniformLocation(r->shader_program, "projection"), 1, GL_FALSE, projection);
                 glUniformMatrix4fv(glGetUniformLocation(r->shader_program, "model"), 1, GL_FALSE, model);
-                
+
                 // Draw quad
                 glDrawArrays(GL_TRIANGLES, 0, 6);
-                
+
                 glDeleteTextures(1, &texture);
             }
-            
-            x += config->thumbnail_width + spacing;
         }
     }
     // TODO: Add grid mode rendering if needed

@@ -8,7 +8,7 @@
 
 #ifdef USE_SHADERS
 
-#include <SDL2/SDL.h>
+#include <SDL3/SDL.h>
 #include <GL/glew.h>
 #include <stdbool.h>
 #include "config.h"

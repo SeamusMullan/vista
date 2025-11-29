@@ -6,9 +6,10 @@ set -e
 # Default values
 BUILD_TYPE="Debug"
 USE_SHADERS="OFF"
+RECONFIGURE=false
 
 # Parse command line arguments
-while getopts "rsh" opt; do
+while getopts "rshc" opt; do
     case $opt in
         r)
             BUILD_TYPE="Release"
@@ -16,19 +17,23 @@ while getopts "rsh" opt; do
         s)
             USE_SHADERS="ON"
             ;;
+        c)
+            RECONFIGURE=true
+            ;;
         h)
-            echo "Usage: $0 [-r] [-s] [-h]"
+            echo "Usage: $0 [-r] [-s] [-c] [-h]"
             echo ""
             echo "Build script for vista"
             echo ""
             echo "Options:"
             echo "  -r    Build in Release mode (default: Debug)"
             echo "  -s    Enable shader support (default: OFF)"
+            echo "  -c    Reconfigure CMake (remove and recreate build directory)"
             echo "  -h    Show this help message"
             exit 0
             ;;
         \?)
-            echo "Usage: $0 [-r] [-s] [-h]"
+            echo "Usage: $0 [-r] [-s] [-c] [-h]"
             echo "Use -h for more information"
             exit 1
             ;;
@@ -39,18 +44,28 @@ echo "Building vista..."
 echo "  Build type: $BUILD_TYPE"
 echo "  Shaders: $USE_SHADERS"
 
-# remove existing build directory if exists
-rm -rf build
-
-# Create build directory
-mkdir -p build
-cd build
-
-# Configure with CMake
-cmake .. \
-    -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
-    -DUSE_SHADERS="$USE_SHADERS" \
-    -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+# Handle CMake configuration
+if [ "$RECONFIGURE" = true ]; then
+    echo "  Reconfiguring: YES"
+    # Remove existing build directory if exists
+    rm -rf build
+    # Create build directory
+    mkdir -p build
+    cd build
+    # Configure with CMake
+    cmake .. \
+        -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
+        -DUSE_SHADERS="$USE_SHADERS" \
+        -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+else
+    echo "  Reconfiguring: NO"
+    # Assume build directory exists
+    if [ ! -d "build" ]; then
+        echo "Error: build directory does not exist. Run with -c to configure."
+        exit 1
+    fi
+    cd build
+fi
 
 # Build using all available cores
 cmake --build . -j$(nproc --all)
