@@ -146,6 +146,8 @@ if(USE_SHADERS)
     find_package(GLEW REQUIRED)
     list(APPEND SOURCES src/shader.c)
     add_definitions(-DUSE_SHADERS)
+    # Define shader installation path
+    add_definitions(-DSHADER_INSTALL_DIR="${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_DATAROOTDIR}/vista/shaders")
 endif()
 
 # Executable
