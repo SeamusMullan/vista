@@ -73,9 +73,23 @@ cmake --build . -j$(nproc --all)
 echo ""
 echo "Build complete! Binary: ./build/vista"
 echo ""
-echo "Installing shaders to /usr/share/vista/shaders..."
-sudo mkdir -p /usr/share/vista/shaders
-sudo install -Dm644 ../shaders/vertex.glsl /usr/share/vista/shaders/vertex.glsl
-sudo install -Dm644 ../shaders/fragment.glsl /usr/share/vista/shaders/fragment.glsl
+
+# Determine shader installation path based on platform
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    # macOS: use /usr/local to avoid SIP restrictions
+    SHADER_DIR="/usr/local/share/vista/shaders"
+else
+    # Linux and others: use /usr/share
+    SHADER_DIR="/usr/share/vista/shaders"
+fi
+
+if [ "$USE_SHADERS" = "ON" ]; then
+    echo "Installing shaders to $SHADER_DIR..."
+    sudo mkdir -p "$SHADER_DIR"
+    sudo cp ../shaders/vertex.glsl "$SHADER_DIR/vertex.glsl"
+    sudo cp ../shaders/fragment.glsl "$SHADER_DIR/fragment.glsl"
+    echo "Shaders installed successfully!"
+fi
+
 echo "To run from build directory:"
 echo "  ./build/vista"

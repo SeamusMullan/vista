@@ -16,7 +16,11 @@ static char* read_file(const char *path) {
     if (!f) {
         // Try system-wide shader directory
         char sys_path[512];
+#ifdef SHADER_INSTALL_DIR
+        snprintf(sys_path, sizeof(sys_path), "%s/%s", SHADER_INSTALL_DIR, strrchr(path, '/') ? strrchr(path, '/') + 1 : path);
+#else
         snprintf(sys_path, sizeof(sys_path), "/usr/share/vista/shaders/%s", strrchr(path, '/') ? strrchr(path, '/') + 1 : path);
+#endif
         f = fopen(sys_path, "rb");
         if (!f) {
             fprintf(stderr, "Failed to open shader file: %s or %s\n", path, sys_path);
