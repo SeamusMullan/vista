@@ -14,6 +14,7 @@ set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -O3 -march=native")
 if(APPLE)
     # macOS: Homebrew installs here
     link_directories(/opt/homebrew/lib)
+    # Note: include_directories for Homebrew added later to avoid conflicts with submodules
     set(CMAKE_MACOSX_RPATH TRUE)
 elseif(UNIX)
     # Linux: typical 64-bit lib dir
@@ -58,6 +59,7 @@ else()
     # Build SDL3 core
     set(SDL_SHARED ON CACHE BOOL "Build SDL3 as shared library")
     set(SDL_STATIC OFF CACHE BOOL "Don't build SDL3 as static library")
+    set(SDL_TEST_LIBRARY OFF CACHE BOOL "Don't build SDL3 test library")
     add_subdirectory(submodules/SDL)
 
     # Build SDL3_image
@@ -66,10 +68,14 @@ else()
     set(SDL3IMAGE_DEPS_SHARED OFF CACHE BOOL "Build dependencies as static")
     add_subdirectory(submodules/SDL_image)
 
-    # Build SDL3_mixer
-    set(SDL3MIXER_INSTALL OFF CACHE BOOL "Don't install SDL3_mixer")
-    set(SDL3MIXER_VENDORED ON CACHE BOOL "Use vendored dependencies")
-    add_subdirectory(submodules/SDL_mixer)
+    # Build SDL3_mixer (temporarily disabled due to build issues)
+    # set(SDL3MIXER_INSTALL OFF CACHE BOOL "Don't install SDL3_mixer")
+    # set(SDL3MIXER_VENDORED ON CACHE BOOL "Use vendored dependencies")
+    # set(SDL3MIXER_VORBIS VORBIS_STB CACHE STRING "Use stb_vorbis instead of system vorbis")
+    # set(SDL3MIXER_FLAC FLAC_DRFLAC CACHE STRING "Use dr_flac instead of system FLAC")
+    # set(SDL3MIXER_MP3 MP3_DRMP3 CACHE STRING "Use dr_mp3 instead of system mpg123")
+    # set(SDL3MIXER_DEPS_SHARED OFF CACHE BOOL "Build dependencies as static")
+    # add_subdirectory(submodules/SDL_mixer)
 
     # Build SDL3_ttf
     set(SDL3TTF_INSTALL OFF CACHE BOOL "Don't install SDL3_ttf")
@@ -83,9 +89,10 @@ else()
         ${CMAKE_BINARY_DIR}/submodules/SDL/include
     )
 
-    # Always enable SDL_image and SDL_mixer when building from source
+    # Always enable SDL_image and SDL_ttf when building from source
+    # Note: SDL_mixer temporarily disabled due to build issues
     set(SDL3_IMAGE_FOUND TRUE)
-    set(SDL3_MIXER_FOUND TRUE)
+    set(SDL3_MIXER_FOUND FALSE)
     set(SDL3_TTF_FOUND TRUE)
 endif()
 
@@ -148,8 +155,22 @@ if(USE_SHADERS)
     find_package(GLEW REQUIRED)
     list(APPEND SOURCES src/shader.c)
     add_definitions(-DUSE_SHADERS)
-    # Define shader installation path
-    add_definitions(-DSHADER_INSTALL_DIR="${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_DATAROOTDIR}/vista/shaders")
+
+    # Define shader installation path - use /usr/local on macOS to avoid SIP restrictions
+    if(APPLE)
+        add_definitions(-DSHADER_INSTALL_DIR="/usr/local/share/vista/shaders")
+    else()
+        add_definitions(-DSHADER_INSTALL_DIR="${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_DATAROOTDIR}/vista/shaders")
+    endif()
+
+    # Handle both old-style GLEW_LIBRARIES and modern GLEW::GLEW target
+    if(NOT TARGET GLEW::GLEW AND GLEW_LIBRARIES)
+        add_library(GLEW::GLEW UNKNOWN IMPORTED)
+        set_target_properties(GLEW::GLEW PROPERTIES
+            IMPORTED_LOCATION "${GLEW_LIBRARIES}"
+            INTERFACE_INCLUDE_DIRECTORIES "${GLEW_INCLUDE_DIRS}"
+        )
+    endif()
 endif()
 
 # Executable
@@ -198,7 +219,7 @@ endif()
 if(USE_SHADERS)
     target_link_libraries(vista
         ${OPENGL_LIBRARIES}
-        ${GLEW_LIBRARIES}
+        GLEW::GLEW
     )
 endif()
 
@@ -207,7 +228,13 @@ include(GNUInstallDirs)
 
 install(TARGETS vista DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES config/vista.conf.example DESTINATION ${CMAKE_INSTALL_DATADIR}/vista)
-install(DIRECTORY shaders DESTINATION ${CMAKE_INSTALL_DATADIR}/vista)
+
+# Install shaders - use /usr/local on macOS to avoid SIP restrictions
+if(APPLE)
+    install(DIRECTORY shaders DESTINATION /usr/local/share/vista)
+else()
+    install(DIRECTORY shaders DESTINATION ${CMAKE_INSTALL_DATADIR}/vista)
+endif()
 
 # FIXED: Install SDL3 shared libraries when building from submodules
 if(NOT USE_SYSTEM_SDL)

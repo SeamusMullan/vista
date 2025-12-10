@@ -93,9 +93,8 @@ echo ""
 echo "Build complete! Binary: ./build/vista"
 echo ""
 
-# Install if requested
 if [ "$INSTALL" = true ]; then
-    echo "Installing vista to $INSTALL_PREFIX..."
+echo "Installing vista to $INSTALL_PREFIX..."
 
     # Check if we need sudo
     if [ "$INSTALL_PREFIX" = "/usr/local" ] || [ "$INSTALL_PREFIX" = "/usr" ]; then
@@ -109,6 +108,24 @@ if [ "$INSTALL" = true ]; then
 
     # Run make install
     $SUDO_CMD make install
+
+    if [ "$USE_SHADERS" = "ON" ]; then
+
+        # Determine shader installation path based on platform
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            # macOS: use /usr/local to avoid SIP restrictions
+            SHADER_DIR="/usr/local/share/vista/shaders"
+        else
+            # Linux and others: use /usr/share
+            SHADER_DIR="/usr/share/vista/shaders"
+        fi
+
+        echo "Installing shaders to $SHADER_DIR..."
+        sudo mkdir -p "$SHADER_DIR"
+        sudo cp ../shaders/vertex.glsl "$SHADER_DIR/vertex.glsl"
+        sudo cp ../shaders/fragment.glsl "$SHADER_DIR/fragment.glsl"
+        echo "Shaders installed successfully!"
+    fi
 
     echo ""
     echo "Installation complete!"
@@ -128,3 +145,6 @@ else
     echo "  ./build.sh -i              # Install to /usr/local (requires sudo)"
     echo "  ./build.sh -i -p \$HOME/.local  # Install to ~/.local (no sudo)"
 fi
+
+
+
