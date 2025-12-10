@@ -7,9 +7,11 @@ set -e
 BUILD_TYPE="Debug"
 USE_SHADERS="OFF"
 RECONFIGURE=false
+INSTALL=false
+INSTALL_PREFIX="/usr/local"
 
 # Parse command line arguments
-while getopts "rshc" opt; do
+while getopts "rshcip:" opt; do
     case $opt in
         r)
             BUILD_TYPE="Release"
@@ -20,8 +22,14 @@ while getopts "rshc" opt; do
         c)
             RECONFIGURE=true
             ;;
+        i)
+            INSTALL=true
+            ;;
+        p)
+            INSTALL_PREFIX="$OPTARG"
+            ;;
         h)
-            echo "Usage: $0 [-r] [-s] [-c] [-h]"
+            echo "Usage: $0 [-r] [-s] [-c] [-i] [-p PREFIX] [-h]"
             echo ""
             echo "Build script for vista"
             echo ""
@@ -29,11 +37,17 @@ while getopts "rshc" opt; do
             echo "  -r    Build in Release mode (default: Debug)"
             echo "  -s    Enable shader support (default: OFF)"
             echo "  -c    Reconfigure CMake (remove and recreate build directory)"
+            echo "  -i    Install after building (requires sudo)"
+            echo "  -p    Installation prefix (default: /usr/local, use \$HOME/.local for user install)"
             echo "  -h    Show this help message"
+            echo ""
+            echo "Examples:"
+            echo "  $0 -r -s -c -i              # Build release with shaders and install to /usr/local"
+            echo "  $0 -r -s -i -p \$HOME/.local  # Build and install to ~/.local (no sudo needed)"
             exit 0
             ;;
         \?)
-            echo "Usage: $0 [-r] [-s] [-c] [-h]"
+            echo "Usage: $0 [-r] [-s] [-c] [-i] [-p PREFIX] [-h]"
             echo "Use -h for more information"
             exit 1
             ;;
@@ -43,6 +57,11 @@ done
 echo "Building vista..."
 echo "  Build type: $BUILD_TYPE"
 echo "  Shaders: $USE_SHADERS"
+if [ "$INSTALL" = true ]; then
+    echo "  Install: YES (to $INSTALL_PREFIX)"
+else
+    echo "  Install: NO"
+fi
 
 # Handle CMake configuration
 if [ "$RECONFIGURE" = true ]; then
@@ -73,9 +92,39 @@ cmake --build . -j$(nproc --all)
 echo ""
 echo "Build complete! Binary: ./build/vista"
 echo ""
-echo "Installing shaders to /usr/share/vista/shaders..."
-sudo mkdir -p /usr/share/vista/shaders
-sudo install -Dm644 ../shaders/vertex.glsl /usr/share/vista/shaders/vertex.glsl
-sudo install -Dm644 ../shaders/fragment.glsl /usr/share/vista/shaders/fragment.glsl
-echo "To run from build directory:"
-echo "  ./build/vista"
+
+# Install if requested
+if [ "$INSTALL" = true ]; then
+    echo "Installing vista to $INSTALL_PREFIX..."
+
+    # Check if we need sudo
+    if [ "$INSTALL_PREFIX" = "/usr/local" ] || [ "$INSTALL_PREFIX" = "/usr" ]; then
+        SUDO_CMD="sudo"
+    else
+        SUDO_CMD=""
+    fi
+
+    # Configure with install prefix
+    $SUDO_CMD cmake -DCMAKE_INSTALL_PREFIX="$INSTALL_PREFIX" ..
+
+    # Run make install
+    $SUDO_CMD make install
+
+    echo ""
+    echo "Installation complete!"
+    echo "  Binary: $INSTALL_PREFIX/bin/vista"
+    echo "  Libraries: $INSTALL_PREFIX/lib/"
+    echo "  Shaders: $INSTALL_PREFIX/share/vista/shaders/"
+    echo ""
+    if [ "$INSTALL_PREFIX" = "$HOME/.local" ]; then
+        echo "Make sure $HOME/.local/bin is in your PATH:"
+        echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+    fi
+else
+    echo "To run from build directory:"
+    echo "  ./build/vista"
+    echo ""
+    echo "To install, run:"
+    echo "  ./build.sh -i              # Install to /usr/local (requires sudo)"
+    echo "  ./build.sh -i -p \$HOME/.local  # Install to ~/.local (no sudo)"
+fi

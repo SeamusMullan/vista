@@ -136,6 +136,8 @@ set(SOURCES
     src/thumbnails.c
     src/renderer.c
     src/wallpaper.c
+    src/color_source.c
+    src/openrgb.c
     src/roulette/roulette.c
     src/roulette/sound.c
 )

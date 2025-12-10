@@ -85,6 +85,14 @@ Config config_default(void)
     config.roulette_show_duration = 1500;
     config.roulette_max_velocity = 80.0f;
 
+    // OpenRGB defaults
+    config.use_openrgb = false;
+    snprintf(config.openrgb_color_source, sizeof(config.openrgb_color_source), "wal");
+    config.openrgb_static_color[0] = '\0';
+    config.openrgb_color_script[0] = '\0';
+    snprintf(config.openrgb_mode, sizeof(config.openrgb_mode), "static");
+    config.openrgb_brightness = -1;  // -1 means don't set brightness
+
     return config;
 }
 
@@ -266,6 +274,30 @@ Config config_parse(const char *path)
             else if (strcmp(k, "roulette_max_velocity") == 0)
             {
                 config.roulette_max_velocity = atof(v);
+            }
+            else if (strcmp(k, "use_openrgb") == 0)
+            {
+                config.use_openrgb = (strcmp(v, "true") == 0 || strcmp(v, "1") == 0);
+            }
+            else if (strcmp(k, "openrgb_color_source") == 0)
+            {
+                strncpy(config.openrgb_color_source, v, sizeof(config.openrgb_color_source) - 1);
+            }
+            else if (strcmp(k, "openrgb_static_color") == 0)
+            {
+                strncpy(config.openrgb_static_color, v, sizeof(config.openrgb_static_color) - 1);
+            }
+            else if (strcmp(k, "openrgb_color_script") == 0)
+            {
+                expand_tilde(v, config.openrgb_color_script, MAX_PATH);
+            }
+            else if (strcmp(k, "openrgb_mode") == 0)
+            {
+                strncpy(config.openrgb_mode, v, sizeof(config.openrgb_mode) - 1);
+            }
+            else if (strcmp(k, "openrgb_brightness") == 0)
+            {
+                config.openrgb_brightness = atoi(v);
             }
         }
     }

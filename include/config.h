@@ -51,6 +51,14 @@ typedef struct {
     int roulette_show_duration;                /**< Final display duration */
     float roulette_max_velocity;               /**< Maximum scroll velocity (items/sec) */
 
+    // OpenRGB integration
+    bool use_openrgb;                          /**< Enable OpenRGB peripheral color control */
+    char openrgb_color_source[32];             /**< Color source: "wal", "script", or "static" */
+    char openrgb_static_color[8];              /**< Static hex color (e.g., "FF5733") */
+    char openrgb_color_script[MAX_PATH];       /**< Custom script that outputs hex color */
+    char openrgb_mode[32];                     /**< OpenRGB mode (e.g., "static", "breathing") */
+    int openrgb_brightness;                    /**< Brightness 0-100, or -1 to ignore */
+
     const char *file_location;                   /**< Location of config file on disk */
 } Config;
 
