@@ -38,6 +38,7 @@ list(APPEND CMAKE_INSTALL_RPATH "$ORIGIN")
 option(USE_SHADERS "Enable OpenGL shader support" ON)
 option(BUILD_DOCS "Build documentation with Doxygen" ON)
 option(USE_SYSTEM_SDL "Use system SDL3 libraries instead of submodules" OFF)
+option(BUILD_TESTS "Build test suite" ON)
 
 # Dependencies
 find_package(OpenSSL REQUIRED)
@@ -283,3 +284,25 @@ add_custom_target(uninstall
     COMMAND xargs rm -f < install_manifest.txt
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
+
+# Testing
+if(BUILD_TESTS)
+    enable_testing()
+    
+    # Test for config parsing (no SDL dependency)
+    add_executable(test_config
+        tests/test_config.c
+        src/config.c
+    )
+    target_include_directories(test_config PRIVATE ${CMAKE_SOURCE_DIR}/include)
+    
+    add_test(NAME ConfigTests COMMAND test_config)
+    
+    # Custom target to run all tests
+    add_custom_target(check
+        COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+        DEPENDS test_config
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+        COMMENT "Running tests..."
+    )
+endif()
