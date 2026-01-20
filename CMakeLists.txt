@@ -35,7 +35,7 @@ list(APPEND CMAKE_INSTALL_RPATH "$ORIGIN/../lib")
 list(APPEND CMAKE_INSTALL_RPATH "$ORIGIN")
 
 # Options
-option(USE_SHADERS "Enable OpenGL shader support" OFF)
+option(USE_SHADERS "Enable OpenGL shader support" ON)
 option(BUILD_DOCS "Build documentation with Doxygen" ON)
 option(USE_SYSTEM_SDL "Use system SDL3 libraries instead of submodules" OFF)
 
