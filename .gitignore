@@ -1,5 +1,7 @@
 # Build artifacts
 build/
+build-test/
+cmake-build-debug/
 *.o
 *.a
 *.so
@@ -31,3 +33,11 @@ docs/Doxyfile
 # OS
 .DS_Store
 Thumbs.db
+
+# Test artifacts
+/tmp/vista_test_*
+
+# Frama-C / Formal Verification
+*.session/
+.frama-c/
+*.wp/
